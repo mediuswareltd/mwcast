@@ -12,6 +12,7 @@ pub fn init(cfg: &mut web::ServiceConfig) {
             .service(
                 web::scope("/streams")
                     .route("/start", web::post().to(handlers::start))
+                    .route("/stop", web::post().to(handlers::stop))
             )
     );
 }

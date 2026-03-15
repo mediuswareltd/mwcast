@@ -25,6 +25,16 @@ pub struct StreamResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct StopStreamRequest {
+    pub stream_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StopStreamResponse {
+    pub status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StreamMetadata {
     pub title: String,
     pub host_id: String,
