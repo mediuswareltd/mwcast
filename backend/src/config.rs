@@ -7,6 +7,7 @@ pub struct Config {
     pub database_url: String,
     pub rust_log: String,
     pub api_base_url: String,
+    pub media_server_url: String,
 }
 
 impl Config {
@@ -24,6 +25,8 @@ impl Config {
             rust_log: env::var("RUST_LOG").unwrap_or_else(|_| "info".to_string()),
             api_base_url: env::var("API_BASE_URL")
                 .unwrap_or_else(|_| "http://localhost:8080".to_string()),
+            media_server_url: env::var("MEDIA_SERVER_URL")
+                .unwrap_or_else(|_| "rtmp://localhost:1935".to_string()),
         }
     }
 }

@@ -59,6 +59,12 @@ pub struct StopStreamResponse {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct ViewerJoinResponse {
+    pub stream_url: String,
+    pub chat_room_id: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct StreamMetadata {
     pub title: String,
     pub host_id: String,

@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::extractors::ValidatedJson;
-use crate::models::{CreateStreamRequest, StreamMetadata, StreamResponse, StopStreamRequest, StopStreamResponse};
+use crate::models::{CreateStreamRequest, StreamMetadata, StreamResponse, StopStreamRequest, StopStreamResponse, ViewerJoinResponse};
 use crate::repository::StreamRepository;
 use crate::response::ApiResponse;
 
@@ -61,5 +61,24 @@ pub async fn metadata(
         title: stream.title,
         host_id: stream.host_id,
         status: stream.status,
+    })))
+}
+
+pub async fn join(
+    pool: web::Data<PgPool>,
+    config: web::Data<Config>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, AppError> {
+    let stream = StreamRepository::get_by_id(&pool, path.into_inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Stream not found".to_string()))?;
+
+    if stream.status != "live" {
+        return Err(AppError::BadRequest("Stream is not live".to_string()));
+    }
+
+    Ok(HttpResponse::Ok().json(ApiResponse::success(ViewerJoinResponse {
+        stream_url: format!("{}/live/{}", config.media_server_url, stream.id),
+        chat_room_id: stream.id.to_string(),
     })))
 }
