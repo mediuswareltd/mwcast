@@ -2,7 +2,7 @@ mod logger;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
-use backend::{config::Config, db, error, routes};
+use backend::{config::Config, db, routes};
 use tracing::info;
 
 #[actix_web::main]
@@ -27,7 +27,6 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .app_data(config_data.clone())
-            .app_data(web::JsonConfig::default().error_handler(error::json_error_handler))
             .wrap(Cors::permissive())
             .configure(routes::init)
     })
