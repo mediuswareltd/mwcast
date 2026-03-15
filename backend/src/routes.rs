@@ -1,12 +1,17 @@
-use actix_web::{get, web, HttpResponse, Responder};
+use actix_web::web;
 
-// Root route
-#[get("/")]
-pub async fn index() -> impl Responder {
-    HttpResponse::Ok().body("Welcome to MWCAST!")
-}
+use crate::handlers;
 
-// Register routes in App
 pub fn init(cfg: &mut web::ServiceConfig) {
-    cfg.service(index);
+    cfg.service(
+        web::scope("/api/v1")
+            // Health check
+            .route("/", web::get().to(handlers::health_check))
+            
+            // Stream management
+            .service(
+                web::scope("/streams")
+                    .route("/start", web::post().to(handlers::start))
+            )
+    );
 }

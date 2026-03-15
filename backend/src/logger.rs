@@ -10,15 +10,25 @@ pub fn init() -> WorkerGuard {
     let file_appender = rolling::daily("logs", "mwcast.log");
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-    let console_layer = fmt::layer(); // console
+    // Set default log level to info if RUST_LOG is not set
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("info"));
+
+    let console_layer = fmt::layer()
+        .pretty()
+        .with_target(true)
+        .with_level(true);
+    
     let file_layer = fmt::layer()
         .with_writer(non_blocking)
-        .with_ansi(false); // no color in file
+        .with_ansi(false)
+        .with_target(true)
+        .with_level(true);
 
     tracing_subscriber::registry()
         .with(console_layer)
         .with(file_layer)
-        .with(EnvFilter::from_default_env())
+        .with(env_filter)
         .init();
 
     guard

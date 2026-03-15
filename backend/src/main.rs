@@ -1,35 +1,37 @@
 mod logger;
-mod routes;
 
-use actix_web::{App, HttpServer};
-use dotenvy::dotenv;
 use actix_cors::Cors;
+use actix_web::{web, App, HttpServer};
+use backend::{config::Config, db, error, routes};
 use tracing::info;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    dotenv().ok();
-
-    // Keep guard alive for the lifetime of the program
     let _guard = logger::init();
 
-    let host = std::env::var("SERVER_HOST").unwrap_or("0.0.0.0".into());
-    let port: u16 = std::env::var("SERVER_PORT")
-        .unwrap_or("8080".into())
-        .parse()
-        .unwrap_or_else(|_| {
-            tracing::warn!("Invalid SERVER_PORT, defaulting to 8080");
-            8080
-        });
+    let config = Config::from_env();
+    info!("Configuration loaded");
 
-    info!("Starting MWCAST server on {}:{}", host, port);
+    let pool = db::connect(&config.database_url)
+        .await
+        .expect("Failed to connect to database");
 
-    HttpServer::new(|| {
+    info!(
+        "Starting MWCAST server on {}:{}",
+        config.server_host, config.server_port
+    );
+
+    let config_data = web::Data::new(config.clone());
+
+    HttpServer::new(move || {
         App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(config_data.clone())
+            .app_data(web::JsonConfig::default().error_handler(error::json_error_handler))
             .wrap(Cors::permissive())
             .configure(routes::init)
     })
-    .bind((host, port))?
+    .bind((config.server_host.as_str(), config.server_port))?
     .run()
     .await
 }
