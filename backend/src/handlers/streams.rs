@@ -5,7 +5,7 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::extractors::ValidatedJson;
-use crate::models::{CreateStreamRequest, StreamResponse, StopStreamRequest, StopStreamResponse};
+use crate::models::{CreateStreamRequest, StreamMetadata, StreamResponse, StopStreamRequest, StopStreamResponse};
 use crate::repository::StreamRepository;
 use crate::response::ApiResponse;
 
@@ -46,5 +46,20 @@ pub async fn stop(
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(StopStreamResponse {
         status: "stopped".to_string(),
+    })))
+}
+
+pub async fn metadata(
+    pool: web::Data<PgPool>,
+    path: web::Path<Uuid>,
+) -> Result<impl Responder, AppError> {
+    let stream = StreamRepository::get_by_id(&pool, path.into_inner())
+        .await?
+        .ok_or_else(|| AppError::NotFound("Stream not found".to_string()))?;
+
+    Ok(HttpResponse::Ok().json(ApiResponse::success(StreamMetadata {
+        title: stream.title,
+        host_id: stream.host_id,
+        status: stream.status,
     })))
 }
