@@ -2,7 +2,7 @@ mod logger;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
-use backend::{config::Config, db, routes};
+use backend::{chat, config::Config, db, routes};
 use tracing::info;
 
 #[actix_web::main]
@@ -22,11 +22,13 @@ async fn main() -> std::io::Result<()> {
     );
 
     let config_data = web::Data::new(config.clone());
+    let chat_rooms = web::Data::new(chat::new_chat_rooms());
 
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .app_data(config_data.clone())
+            .app_data(chat_rooms.clone())
             .wrap(Cors::permissive())
             .configure(routes::init)
     })

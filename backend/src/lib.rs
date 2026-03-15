@@ -1,3 +1,4 @@
+pub mod chat;
 pub mod config;
 pub mod db;
 pub mod error;
@@ -9,7 +10,3 @@ pub mod response;
 pub mod routes;
 
 pub use config::Config;
-
-
-
-
