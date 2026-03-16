@@ -1,10 +1,13 @@
 use actix_web::{web, HttpResponse, Responder};
+use rdkafka::admin::AdminClient;
+use rdkafka::client::DefaultClientContext;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::config::Config;
 use crate::error::AppError;
 use crate::extractors::ValidatedJson;
+use crate::kafka;
 use crate::models::{CreateStreamRequest, StreamMetadata, StreamResponse, StopStreamRequest, StopStreamResponse, ViewerJoinResponse};
 use crate::repository::StreamRepository;
 use crate::response::ApiResponse;
@@ -12,9 +15,12 @@ use crate::response::ApiResponse;
 pub async fn start(
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
+    admin: web::Data<AdminClient<DefaultClientContext>>,
     ValidatedJson(req): ValidatedJson<CreateStreamRequest>,
 ) -> Result<impl Responder, AppError> {
     let stream = StreamRepository::create(&pool, req.host_id, req.title).await?;
+
+    kafka::create_topic(&admin, &stream.id.to_string()).await;
 
     let response = StreamResponse {
         stream_id: stream.id.to_string(),
@@ -26,6 +32,7 @@ pub async fn start(
 
 pub async fn stop(
     pool: web::Data<PgPool>,
+    admin: web::Data<AdminClient<DefaultClientContext>>,
     ValidatedJson(req): ValidatedJson<StopStreamRequest>,
 ) -> Result<impl Responder, AppError> {
     let id = Uuid::parse_str(&req.stream_id)
@@ -43,6 +50,8 @@ pub async fn stop(
     }
 
     StreamRepository::update_status(&pool, id, "stopped").await?;
+
+    kafka::delete_topic(&admin, &id.to_string()).await;
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(StopStreamResponse {
         status: "stopped".to_string(),

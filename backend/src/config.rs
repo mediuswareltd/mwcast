@@ -8,6 +8,7 @@ pub struct Config {
     pub rust_log: String,
     pub api_base_url: String,
     pub media_server_url: String,
+    pub kafka_brokers: String,
 }
 
 impl Config {
@@ -27,6 +28,8 @@ impl Config {
                 .unwrap_or_else(|_| "http://localhost:8080".to_string()),
             media_server_url: env::var("MEDIA_SERVER_URL")
                 .unwrap_or_else(|_| "rtmp://localhost:1935".to_string()),
+            kafka_brokers: env::var("KAFKA_BROKERS")
+                .unwrap_or_else(|_| "localhost:9092".to_string()),
         }
     }
 }
