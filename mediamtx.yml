@@ -1,0 +1,30 @@
+# MWCAST Media Server Configuration (Standard Setup)
+
+# Listeners
+rtmp: yes
+rtmpAddress: :1935
+
+hls: yes
+hlsAddress: :8888
+
+webrtc: yes
+webrtcAddress: :8889
+# Mux is essential for Docker
+webrtcICEUDPMuxAddress: :8889
+
+api: yes
+apiAddress: :9997
+
+# --- TRANSCODING ENGINE (PHASE 3) ---
+paths:
+  all:
+    # Use lowercase for path-specific options
+    runOnReady: >
+      ffmpeg -i rtsp://localhost:8554/$MTX_PATH 
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=1280:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_720p 
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=854:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_480p 
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=640:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_360p 
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=426:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_240p 
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=256:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_144p
+    
+    runOnReadyRestart: yes

@@ -60,7 +60,13 @@ pub struct StopStreamResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ViewerJoinResponse {
-    pub stream_url: String,
+    pub hls_url: String,       // Auto-adaptive or original
+    pub hls_720p_url: String,
+    pub hls_480p_url: String,
+    pub hls_360p_url: String,
+    pub hls_240p_url: String,
+    pub hls_144p_url: String,
+    pub webrtc_url: String,
     pub chat_room_id: String,
 }
 
