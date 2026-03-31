@@ -1,0 +1,97 @@
+version: '3.8'
+
+services:
+  # Database (PostgreSQL)
+  db:
+      image: postgres:16-alpine
+      container_name: mwcast-db
+      restart: always
+      environment:
+        POSTGRES_USER: ${POSTGRES_USER:-mwcast}
+        POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mwcast}
+        POSTGRES_DB: ${POSTGRES_DB:-mwcast}
+      volumes:
+        - ./data/postgres:/var/lib/postgresql/data
+      ports:
+        - "${POSTGRES_PORT:-5432}:5432"
+      healthcheck:
+        test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mwcast} -d ${POSTGRES_DB:-mwcast}"]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+
+  # Message Queue (Kafka + Zookeeper)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.6.0
+    container_name: mwcast-zookeeper
+    ports:
+      - "2181:2181"
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+
+  kafka:
+    image: confluentinc/cp-kafka:7.6.0
+    container_name: mwcast-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "${KAFKA_EXTERNAL_PORT:-9092}:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "29092"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Media Server (MediaMTX)
+  media-server:
+    image: bluenviron/mediamtx:latest
+    container_name: mwcast-media-server
+    restart: always
+    ports:
+      - "${MEDIA_RTMP_PORT:-1935}:1935" # RTMP
+      - "8554:8554"                    # RTSP
+      - "${MEDIA_HLS_PORT:-8888}:8888" # HLS
+      - "${MEDIA_WEBRTC_PORT:-8889}:8889" # WebRTC
+      - "9997:9997"                    # API
+    environment:
+      - MTX_RTMP=yes
+      - MTX_HLS=yes
+      - MTX_WEBRTC=yes
+      - MTX_API=yes
+      
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: mwcast-backend
+    restart: always
+    volumes:
+      - ./backend/logs:/app/logs
+    ports:
+      - "${SERVER_PORT:-8080}:8080"
+    environment:
+      - APP_NAME=${APP_NAME:-MWCAST}
+      - RUST_LOG=${RUST_LOG:-info}
+      - SERVER_HOST=${SERVER_HOST:-0.0.0.0}
+      - SERVER_PORT=8080
+      - DATABASE_URL=postgres://${POSTGRES_USER:-mwcast}:${POSTGRES_PASSWORD:-mwcast}@db:5432/${POSTGRES_DB:-mwcast}
+      - API_BASE_URL=${API_BASE_URL:-http://localhost:8080}
+      - MEDIA_SERVER_URL=rtmp://localhost:${MEDIA_RTMP_PORT:-1935}
+      - KAFKA_BROKERS=kafka:29092
+    links:
+      - db
+      - kafka
+      - media-server
+
+networks:
+  default:
+    name: mwcast-network

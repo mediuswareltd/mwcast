@@ -20,3 +20,7 @@ backend/logs
 # OS
 .DS_Store
 Thumbs.db
+
+# Others
+Context/
+data/
