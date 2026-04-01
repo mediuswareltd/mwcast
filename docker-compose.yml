@@ -52,20 +52,18 @@ services:
 
   # Media Server (MediaMTX)
   media-server:
-    image: bluenviron/mediamtx:latest
+    image: bluenviron/mediamtx:latest-ffmpeg
     container_name: mwcast-media-server
     restart: always
+    volumes:
+      - ./mediamtx.yml:/mediamtx.yml # <--- All Media Server logic is now in this standard file
     ports:
       - "${MEDIA_RTMP_PORT:-1935}:1935" # RTMP
       - "8554:8554"                    # RTSP
       - "${MEDIA_HLS_PORT:-8888}:8888" # HLS
-      - "${MEDIA_WEBRTC_PORT:-8889}:8889" # WebRTC
+      - "${MEDIA_WEBRTC_PORT:-8889}:8889/tcp" # WebRTC TCP
+      - "${MEDIA_WEBRTC_PORT:-8889}:8889/udp" # WebRTC UDP
       - "9997:9997"                    # API
-    environment:
-      - MTX_RTMP=yes
-      - MTX_HLS=yes
-      - MTX_WEBRTC=yes
-      - MTX_API=yes
       
   # Backend API
   backend:
