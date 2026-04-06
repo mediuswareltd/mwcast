@@ -32,6 +32,8 @@ const Stream = () => {
   }, [streamId]);
   const [isLiked, setIsLiked] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [copiedKey, setCopiedKey] = useState(false);
+  const [copiedServer, setCopiedServer] = useState(false);
   const [streamData, setStreamData] = useState(null);
   
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
@@ -72,23 +74,27 @@ const Stream = () => {
 
     startHlsPoll();
 
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(async mediaStream => {
-        if (videoRef.current) videoRef.current.srcObject = mediaStream;
-        if (streamId) {
-          try {
-            await publish(streamId, mediaStream);
-            setPublishState('publishing');
-            clearInterval(hlsPollRef.current);
-            hlsPollRef.current = null;
-          } catch (err) {
-            console.warn('WHIP publish failed (using RTMP fallback):', err);
+    // navigator.mediaDevices is only available on localhost or HTTPS
+    if (navigator.mediaDevices?.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+        .then(async mediaStream => {
+          if (videoRef.current) videoRef.current.srcObject = mediaStream;
+          if (streamId) {
+            try {
+              await publish(streamId, mediaStream);
+              setPublishState('publishing');
+              clearInterval(hlsPollRef.current);
+              hlsPollRef.current = null;
+            } catch (err) {
+              console.warn('WHIP publish failed (using RTMP fallback):', err);
+            }
           }
-        }
-      })
-      .catch(() => {
-        // No camera — rely on HLS poll only
-      });
+        })
+        .catch(() => {
+          // No camera — rely on HLS poll only
+        });
+    }
+    // else: no camera access (HTTP + non-localhost), rely on HLS poll for RTMP/OBS ingest
 
     return () => {
       stopPublisher();
@@ -104,7 +110,19 @@ const Stream = () => {
     if (isHost || !streamId) return;
     fetch(`${API_BASE_URL}/api/v1/streams/${streamId}/join`)
       .then(res => res.json())
-      .then(data => { if (data.success) setStreamData(data.data); });
+      .then(data => {
+        if (data.success) {
+          setStreamData(data.data);
+          // If we navigated here without a username in the URL (e.g. direct link),
+          // the join response now carries the real username and title.
+          if (!streamerName || streamerName === 'undefined') {
+            window.history.replaceState(
+              null, '',
+              `/s/${data.data.username}?id=${streamId}&title=${encodeURIComponent(data.data.title)}`
+            );
+          }
+        }
+      });
   }, [isHost, streamId]);
 
   // Viewer: poll stream status to detect when host stops
@@ -198,11 +216,24 @@ const Stream = () => {
     setInputText("");
   };
 
+  const copyText = (text, setCopiedFn) => {
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text);
+    } else {
+      const el = document.createElement('textarea');
+      el.value = text;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand('copy');
+      document.body.removeChild(el);
+    }
+    setCopiedFn(true);
+    setTimeout(() => setCopiedFn(false), 2000);
+  };
+
   const copyLink = () => {
     const url = `${window.location.origin}/s/${streamerName}?id=${streamId}`;
-    navigator.clipboard.writeText(url);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    copyText(url, setCopied);
   };
 
   return (
@@ -348,8 +379,8 @@ const Stream = () => {
                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-slate-900 rounded-full"></div>
             </div>
             <div className="min-w-0">
-              <h2 className="text-base font-black text-slate-800 dark:text-white tracking-tight truncate">@{streamerName}</h2>
-              <p className="text-indigo-600 dark:text-indigo-400 font-bold text-xs tracking-wide truncate">{initialTitle}</p>
+              <h2 className="text-base font-black text-slate-800 dark:text-white tracking-tight truncate">@{streamData?.username || streamerName}</h2>
+              <p className="text-indigo-600 dark:text-indigo-400 font-bold text-xs tracking-wide truncate">{streamData?.title || initialTitle}</p>
             </div>
           </div>
           
@@ -378,6 +409,42 @@ const Stream = () => {
             </button>
           </div>
         </div>
+
+        {/* RTMP Stream Info — host only */}
+        {isHost && (
+          <div className="bg-slate-900 px-5 py-4 rounded-2xl border border-slate-700 shadow-xl shrink-0 space-y-3">
+            <div className="flex items-center gap-2 text-slate-400 text-[10px] font-black uppercase tracking-widest">
+              <Radio size={12} className="text-red-400" />
+              Stream Settings
+            </div>
+            <div className="grid grid-cols-1 gap-2">
+              <div className="flex items-center justify-between gap-3 bg-slate-800 rounded-xl px-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Server URL</p>
+                  <p className="text-xs font-mono text-slate-200 truncate">{`rtmp://${window.location.hostname}:1935/live`}</p>
+                </div>
+                <button
+                  onClick={() => copyText(`rtmp://${window.location.hostname}:1935/live`, setCopiedServer)}
+                  className="shrink-0 text-slate-400 hover:text-white transition-colors p-1"
+                >
+                  {copiedServer ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                </button>
+              </div>
+              <div className="flex items-center justify-between gap-3 bg-slate-800 rounded-xl px-4 py-2.5">
+                <div className="min-w-0">
+                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest mb-0.5">Stream Key</p>
+                  <p className="text-xs font-mono text-slate-200 truncate">{streamId}</p>
+                </div>
+                <button
+                  onClick={() => copyText(streamId, setCopiedKey)}
+                  className="shrink-0 text-slate-400 hover:text-white transition-colors p-1"
+                >
+                  {copiedKey ? <Check size={13} className="text-emerald-400" /> : <Copy size={13} />}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Chat Sidebar — pinned full height */}

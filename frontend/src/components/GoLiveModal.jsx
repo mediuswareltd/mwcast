@@ -20,6 +20,10 @@ const GoLiveModal = ({ isOpen, onClose }) => {
   }, [isOpen, step]);
 
   const startPreview = async () => {
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setError("Camera/mic unavailable over HTTP. Use OBS/ffmpeg to stream.");
+      return;
+    }
     try {
       // First try to get both
       const mediaStream = await navigator.mediaDevices.getUserMedia({ 
@@ -64,7 +68,7 @@ const GoLiveModal = ({ isOpen, onClose }) => {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-           host_id: "00000000-0000-0000-0000-000000000000", 
+           host_name: username,
            title: title 
         })
       });
@@ -73,9 +77,10 @@ const GoLiveModal = ({ isOpen, onClose }) => {
       
       const resData = await response.json();
       const streamId = resData.data.stream_id;
+      const slug = username.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
       // Navigate to stream page using standard route /s/
-      navigate(`/s/${username}?host=true&id=${streamId}&title=${encodeURIComponent(title)}`);
+      navigate(`/s/${slug}?host=true&id=${streamId}&title=${encodeURIComponent(title)}`);
       onClose();
     } catch (err) {
       setError("Server error: " + err.message);
@@ -117,7 +122,7 @@ const GoLiveModal = ({ isOpen, onClose }) => {
           {step === 1 ? (
           <div className="grid md:grid-cols-2 gap-8">
              {/* Left: Input */}
-             <div className="space-y-6">
+             <form className="space-y-6" onSubmit={(e) => { e.preventDefault(); handleStartLive(); }}>
                 <div className="space-y-2">
                   <label className="text-xs font-bold uppercase tracking-widest text-slate-400 ml-1">Stream Title</label>
                   <input 
@@ -138,14 +143,14 @@ const GoLiveModal = ({ isOpen, onClose }) => {
                 </div>
                 <div className="pt-4">
                   <button 
-                    onClick={handleStartLive}
+                    type="submit"
                     className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-600/30 hover:scale-105 active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2"
                   >
                     <Play size={16} fill="currentColor" />
                     Start Broadcast
                   </button>
                 </div>
-             </div>
+             </form>
 
              {/* Right: Preview or Placeholder */}
              <div className="space-y-4">

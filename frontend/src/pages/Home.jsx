@@ -36,6 +36,7 @@ const Home = () => {
           
           <button 
             className="w-full sm:w-auto group flex items-center justify-center gap-2 text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 font-bold py-5 px-8 transition-colors"
+            onClick={() => navigate('/explore')}
           >
             Explore Streams
             <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />

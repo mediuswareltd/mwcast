@@ -17,15 +17,15 @@ export const WS_CHAT_URL = HOST === 'localhost'
 // MediaMTX WHIP endpoint — browser pushes WebRTC stream here
 export const WHIP_URL = (streamId) =>
   HOST === 'localhost'
-    ? `http://localhost:${PORT_WEBRTC}/${streamId}/whip`
-    : `http://${HOST}:${PORT_WEBRTC}/${streamId}/whip`;
+    ? `http://localhost:${PORT_WEBRTC}/live/${streamId}/whip`
+    : `http://${HOST}:${PORT_WEBRTC}/live/${streamId}/whip`;
 
 // HLS playback for viewers
 export const HLS_URL = (streamId) =>
   HOST === 'localhost'
-    ? `http://localhost:${PORT_HLS}/${streamId}/index.m3u8`
-    : `http://${HOST}:${PORT_HLS}/${streamId}/index.m3u8`;
+    ? `http://localhost:${PORT_HLS}/live/${streamId}/index.m3u8`
+    : `http://${HOST}:${PORT_HLS}/live/${streamId}/index.m3u8`;
 
 // MediaMTX API — check if a path is live
 export const MEDIAMTX_PATH_URL = (streamId) =>
-  `http://localhost:9997/v3/paths/get/${streamId}`;
+  `http://${HOST}:9997/v3/paths/get/live/${streamId}`;
