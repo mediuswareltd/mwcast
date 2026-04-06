@@ -29,10 +29,13 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+      ZOOKEEPER_HEAP_OPTS: "-Xmx256m -Xms128m"
+    mem_limit: 384m
 
   kafka:
     image: confluentinc/cp-kafka:7.6.0
     container_name: mwcast-kafka
+    restart: always
     depends_on:
       - zookeeper
     ports:
@@ -44,6 +47,10 @@ services:
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_HEAP_OPTS: "-Xmx512m -Xms256m"
+      KAFKA_LOG_RETENTION_HOURS: 1
+      KAFKA_LOG_SEGMENT_BYTES: 10485760
+    mem_limit: 768m
     healthcheck:
       test: ["CMD", "nc", "-z", "localhost", "29092"]
       interval: 10s
@@ -56,14 +63,14 @@ services:
     container_name: mwcast-media-server
     restart: always
     volumes:
-      - ./mediamtx.yml:/mediamtx.yml # <--- All Media Server logic is now in this standard file
+      - ./mediamtx.yml:/mediamtx.yml
     ports:
-      - "${MEDIA_RTMP_PORT:-1935}:1935" # RTMP
-      - "8554:8554"                    # RTSP
-      - "${MEDIA_HLS_PORT:-8888}:8888" # HLS
-      - "${MEDIA_WEBRTC_PORT:-8889}:8889/tcp" # WebRTC TCP
-      - "${MEDIA_WEBRTC_PORT:-8889}:8889/udp" # WebRTC UDP
-      - "9997:9997"                    # API
+      - "${MEDIA_RTMP_PORT:-1935}:1935"
+      - "8554:8554"
+      - "${MEDIA_HLS_PORT:-8888}:8888"
+      - "${MEDIA_WEBRTC_PORT:-8889}:8889/tcp"
+      - "${MEDIA_WEBRTC_PORT:-8889}:8889/udp"
+      - "9997:9997"
       
   # Backend API
   backend:
