@@ -38,8 +38,13 @@ const LivePlayer = ({ src, className = '', stopped = false }) => {
       hls.on(Hls.Events.MANIFEST_PARSED, startPlay);
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (data.fatal) {
-          hls.destroy();
-          hlsRef.current = null;
+          // Reload the source instead of destroying — handles stream restarts
+          setTimeout(() => {
+            if (hlsRef.current) {
+              hlsRef.current.loadSource(src);
+              hlsRef.current.startLoad();
+            }
+          }, 2000);
         }
       });
     } else if (v.canPlayType('application/vnd.apple.mpegurl')) {

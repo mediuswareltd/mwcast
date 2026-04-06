@@ -106,15 +106,23 @@ const Stream = () => {
       });
   }, [isHost, streamId]);
 
-  // Viewer: poll MediaMTX until HLS is ready before showing the player
+  // Viewer: continuously poll HLS — handles initial ready + stream restarts
   useEffect(() => {
     if (isHost || !streamId) return;
+    let wasReady = false;
     const poll = setInterval(async () => {
       try {
-        const hlsRes = await fetch(HLS_URL(streamId));
-        if (hlsRes.ok) {
-          setHlsReady(true);
-          clearInterval(poll);
+        const res = await fetch(HLS_URL(streamId));
+        if (res.ok) {
+          if (!wasReady) {
+            // First time ready
+            setHlsReady(true);
+            wasReady = true;
+          }
+        } else if (wasReady) {
+          // Was ready but now 404 — stream restarted, reset player
+          setHlsReady(false);
+          wasReady = false;
         }
       } catch (_) {}
     }, 2000);
