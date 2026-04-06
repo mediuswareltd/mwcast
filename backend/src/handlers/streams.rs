@@ -87,13 +87,13 @@ pub async fn join(
     }
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(ViewerJoinResponse {
-        hls_url: format!("http://localhost:8888/live/{}/index.m3u8", stream.id),
-        hls_720p_url: format!("http://localhost:8888/live/{}_720p/index.m3u8", stream.id),
-        hls_480p_url: format!("http://localhost:8888/live/{}_480p/index.m3u8", stream.id),
-        hls_360p_url: format!("http://localhost:8888/live/{}_360p/index.m3u8", stream.id),
-        hls_240p_url: format!("http://localhost:8888/live/{}_240p/index.m3u8", stream.id),
-        hls_144p_url: format!("http://localhost:8888/live/{}_144p/index.m3u8", stream.id),
-        webrtc_url: format!("http://localhost:8889/live/{}", stream.id),
+        hls_url: format!("http://localhost:8888/{}/index.m3u8", stream.id),
+        hls_720p_url: format!("http://localhost:8888/{}_720p/index.m3u8", stream.id),
+        hls_480p_url: format!("http://localhost:8888/{}_480p/index.m3u8", stream.id),
+        hls_360p_url: format!("http://localhost:8888/{}_360p/index.m3u8", stream.id),
+        hls_240p_url: format!("http://localhost:8888/{}_240p/index.m3u8", stream.id),
+        hls_144p_url: format!("http://localhost:8888/{}_144p/index.m3u8", stream.id),
+        webrtc_url: format!("http://localhost:8889/{}", stream.id),
         chat_room_id: stream.id.to_string(),
     })))
 }
