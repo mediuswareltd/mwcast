@@ -1,3 +1,3 @@
 pub mod stream;
 
-pub use stream::{Stream, CreateStreamRequest, StreamResponse, StopStreamRequest, StopStreamResponse, StreamMetadata, ViewerJoinResponse};
+pub use stream::{Stream, CreateStreamRequest, StreamResponse, StopStreamRequest, StopStreamResponse, StreamMetadata, StreamListItem, ViewerJoinResponse};

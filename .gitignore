@@ -24,3 +24,7 @@ Thumbs.db
 # Others
 Context/
 data/
+
+# Frontend
+dist/
+node_modules/

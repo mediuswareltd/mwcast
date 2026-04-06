@@ -6,7 +6,7 @@ use validator::Validate;
 #[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
 pub struct Stream {
     pub id: Uuid,
-    pub host_id: String,
+    pub host_name: String,
     pub title: String,
     pub status: String,
     pub created_at: DateTime<Utc>,
@@ -16,8 +16,8 @@ pub struct Stream {
 #[derive(Debug, Serialize, Deserialize, Validate)]
 #[serde(default)]
 pub struct CreateStreamRequest {
-    #[validate(length(min = 1, message = "host_id is required"))]
-    pub host_id: String,
+    #[validate(length(min = 1, message = "host_name is required"))]
+    pub host_name: String,
 
     #[validate(length(min = 1, message = "title is required"))]
     pub title: String,
@@ -26,7 +26,7 @@ pub struct CreateStreamRequest {
 impl Default for CreateStreamRequest {
     fn default() -> Self {
         Self {
-            host_id: String::new(),
+            host_name: String::new(),
             title: String::new(),
         }
     }
@@ -60,7 +60,7 @@ pub struct StopStreamResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ViewerJoinResponse {
-    pub hls_url: String,       // Auto-adaptive or original
+    pub hls_url: String,
     pub hls_720p_url: String,
     pub hls_480p_url: String,
     pub hls_360p_url: String,
@@ -68,11 +68,22 @@ pub struct ViewerJoinResponse {
     pub hls_144p_url: String,
     pub webrtc_url: String,
     pub chat_room_id: String,
+    pub username: String,
+    pub title: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct StreamMetadata {
     pub title: String,
-    pub host_id: String,
+    pub host_name: String,
     pub status: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct StreamListItem {
+    pub id: String,
+    pub host_name: String,
+    pub title: String,
+    pub status: String,
+    pub created_at: DateTime<Utc>,
 }

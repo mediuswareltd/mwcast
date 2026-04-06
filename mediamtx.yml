@@ -1,30 +1,43 @@
-# MWCAST Media Server Configuration (Standard Setup)
+# MWCAST Media Server Configuration
 
 # Listeners
-rtmp: yes
+rtmp: true
 rtmpAddress: :1935
 
-hls: yes
+hls: true
 hlsAddress: :8888
 
-webrtc: yes
+webrtc: true
 webrtcAddress: :8889
-# Mux is essential for Docker
 webrtcICEUDPMuxAddress: :8889
 
-api: yes
+api: true
 apiAddress: :9997
 
-# --- TRANSCODING ENGINE (PHASE 3) ---
+# Authentication — allow anyone to publish, read, and use API
+authMethod: internal
+authInternalUsers:
+  - user: any
+    pass:
+    ips: []
+    permissions:
+      - action: publish
+        path:
+      - action: read
+        path:
+      - action: playback
+        path:
+      - action: api
+        path:
+
+# Paths
 paths:
   all:
-    # Use lowercase for path-specific options
     runOnReady: >
-      ffmpeg -i rtsp://localhost:8554/$MTX_PATH 
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=1280:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_720p 
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=854:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_480p 
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=640:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_360p 
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=426:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_240p 
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=256:-2 -f rtsp rtsp://localhost:8554/$MTX_PATH_144p
-    
-    runOnReadyRestart: yes
+      ffmpeg -i rtsp://localhost:8554/$MTX_PATH
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=1280:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_720p
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=854:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_480p
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=640:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_360p
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=426:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_240p
+      -c:a copy -c:v libx264 -preset superfast -filter:v scale=256:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_144p
+    runOnReadyRestart: false

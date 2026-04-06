@@ -11,6 +11,7 @@ pub fn init(cfg: &mut web::ServiceConfig) {
             // Stream management
             .service(
                 web::scope("/streams")
+                    .route("", web::get().to(handlers::list))
                     .route("/start", web::post().to(handlers::start))
                     .route("/stop", web::post().to(handlers::stop))
                     .route("/{stream_id}", web::get().to(handlers::metadata))
