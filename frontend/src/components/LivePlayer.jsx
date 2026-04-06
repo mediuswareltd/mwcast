@@ -19,8 +19,16 @@ const LivePlayer = ({ src, className = '', stopped = false }) => {
       v.muted = true;
       v.play()
         .then(() => { setPlaying(true); setReady(true); })
-        .catch(() => setReady(true)); // still mark ready so controls show
+        .catch(() => setReady(true));
     };
+
+    // Keep playing state in sync with actual video state
+    const onPlay      = () => { setPlaying(true); setReady(true); };
+    const onPause     = () => setPlaying(false);
+    const onCanPlay   = () => setReady(true);
+    v.addEventListener('play', onPlay);
+    v.addEventListener('pause', onPause);
+    v.addEventListener('canplay', onCanPlay);
 
     if (Hls.isSupported()) {
       const hls = new Hls({ lowLatencyMode: true });
@@ -28,13 +36,21 @@ const LivePlayer = ({ src, className = '', stopped = false }) => {
       hls.loadSource(src);
       hls.attachMedia(v);
       hls.on(Hls.Events.MANIFEST_PARSED, startPlay);
+      hls.on(Hls.Events.ERROR, (_, data) => {
+        if (data.fatal) {
+          hls.destroy();
+          hlsRef.current = null;
+        }
+      });
     } else if (v.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS
       v.src = src;
       v.addEventListener('loadedmetadata', startPlay, { once: true });
     }
 
     return () => {
+      v.removeEventListener('play', onPlay);
+      v.removeEventListener('pause', onPause);
+      v.removeEventListener('canplay', onCanPlay);
       if (hlsRef.current) {
         hlsRef.current.destroy();
         hlsRef.current = null;
@@ -103,6 +119,7 @@ const LivePlayer = ({ src, className = '', stopped = false }) => {
       <video
         ref={videoRef}
         playsInline
+        disablePictureInPicture
         className="w-full h-full object-contain pointer-events-none"
       />
 
@@ -113,9 +130,9 @@ const LivePlayer = ({ src, className = '', stopped = false }) => {
         </div>
       </div>
 
-      {/* Controls bar — z-10 ensures it sits above PiP camera preview */}
+      {/* Controls bar */}
       <div
-        className={`absolute bottom-0 left-0 right-0 px-4 py-3 flex items-center gap-3 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 z-10 ${showControls ? 'opacity-100' : 'opacity-0'}`}
+        className={`absolute bottom-0 left-0 right-0 px-4 py-3 flex items-center gap-3 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 z-30 pointer-events-auto ${showControls ? 'opacity-100' : 'opacity-0'}`}
         onClick={(e) => e.stopPropagation()}
       >
         <button

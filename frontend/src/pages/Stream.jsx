@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
-import { Users, MessageCircle, Send, MoreHorizontal, Share2, Heart, Shield, Copy, Check, Camera, Mic, X, Square, Radio } from 'lucide-react';
+import { MessageCircle, Send, Heart, Shield, Copy, Check, Mic, MicOff, Camera, CameraOff, Monitor, MonitorOff, Square, Radio } from 'lucide-react';
 import JoinStreamModal from '../components/JoinStreamModal';
 import LivePlayer from '../components/LivePlayer';
-import { API_BASE_URL, WS_CHAT_URL, HLS_URL, MEDIAMTX_PATH_URL } from '../config';
+import { API_BASE_URL, WS_CHAT_URL, HLS_URL } from '../config';
 import { useWhipPublisher } from '../hooks/useWhipPublisher';
 
 const Stream = () => {
@@ -39,10 +39,17 @@ const Stream = () => {
   const [isStopModalOpen, setIsStopModalOpen] = useState(false);
   const [isStopping, setIsStopping] = useState(false);
   const [streamEnded, setStreamEnded] = useState(false);
-  const [publishState, setPublishState] = useState('idle'); // idle | publishing | error
-  const { publish, stop: stopPublisher } = useWhipPublisher();
-  const videoRef = useRef(null);
-  const wsRef = useRef(null);
+  const [publishState, setPublishState] = useState('idle');
+  const [audioOnly, setAudioOnly] = useState(false);
+  const [hlsReady, setHlsReady] = useState(false);
+  // Host controls
+  const [micOn, setMicOn]           = useState(true);
+  const [camOn, setCamOn]           = useState(true);
+  const [screenSharing, setScreenSharing] = useState(false);
+  const { publish, stop: stopPublisher, pcRef } = useWhipPublisher();
+  const localMedia = useRef(null); // camera/mic stream
+  const pipRef     = useRef(null); // PiP video element
+  const wsRef      = useRef(null);
   const chatEndRef = useRef(null);
   const hlsPollRef = useRef(null);
 
@@ -51,50 +58,26 @@ const Stream = () => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Handle Host Camera Feed + WHIP publishing
+  // Host: grab the media stream published from the modal
   useEffect(() => {
     if (!isHost) return;
-
-    const startHlsPoll = () => {
-      if (hlsPollRef.current) return; // already polling
-      hlsPollRef.current = setInterval(async () => {
-        try {
-          const res = await fetch(MEDIAMTX_PATH_URL(streamId));
-          if (res.ok) {
-            const data = await res.json();
-            if (data.ready === true) {
-              setPublishState('publishing');
-              clearInterval(hlsPollRef.current);
-              hlsPollRef.current = null;
-            }
-          }
-        } catch (_) {}
-      }, 2000);
-    };
-
-    startHlsPoll();
-
-    // navigator.mediaDevices is only available on localhost or HTTPS
-    if (navigator.mediaDevices?.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-        .then(async mediaStream => {
-          if (videoRef.current) videoRef.current.srcObject = mediaStream;
-          if (streamId) {
-            try {
-              await publish(streamId, mediaStream);
-              setPublishState('publishing');
-              clearInterval(hlsPollRef.current);
-              hlsPollRef.current = null;
-            } catch (err) {
-              console.warn('WHIP publish failed (using RTMP fallback):', err);
-            }
-          }
-        })
-        .catch(() => {
-          // No camera — rely on HLS poll only
-        });
+    if (window.__mwcast_stream) {
+      localMedia.current = window.__mwcast_stream;
     }
-    // else: no camera access (HTTP + non-localhost), rely on HLS poll for RTMP/OBS ingest
+    // Optimistically mark as publishing — modal already confirmed HLS is ready
+    setPublishState('publishing');
+
+    // Keep polling as a safety net for external sources (OBS/ffmpeg)
+    hlsPollRef.current = setInterval(async () => {
+      try {
+        const res = await fetch(HLS_URL(streamId));
+        if (res.ok) {
+          setPublishState('publishing');
+          clearInterval(hlsPollRef.current);
+          hlsPollRef.current = null;
+        }
+      } catch (_) {}
+    }, 3000);
 
     return () => {
       stopPublisher();
@@ -113,8 +96,6 @@ const Stream = () => {
       .then(data => {
         if (data.success) {
           setStreamData(data.data);
-          // If we navigated here without a username in the URL (e.g. direct link),
-          // the join response now carries the real username and title.
           if (!streamerName || streamerName === 'undefined') {
             window.history.replaceState(
               null, '',
@@ -123,6 +104,21 @@ const Stream = () => {
           }
         }
       });
+  }, [isHost, streamId]);
+
+  // Viewer: poll MediaMTX until HLS is ready before showing the player
+  useEffect(() => {
+    if (isHost || !streamId) return;
+    const poll = setInterval(async () => {
+      try {
+        const hlsRes = await fetch(HLS_URL(streamId));
+        if (hlsRes.ok) {
+          setHlsReady(true);
+          clearInterval(poll);
+        }
+      } catch (_) {}
+    }, 2000);
+    return () => clearInterval(poll);
   }, [isHost, streamId]);
 
   // Viewer: poll stream status to detect when host stops
@@ -236,6 +232,67 @@ const Stream = () => {
     copyText(url, setCopied);
   };
 
+  // Host controls
+  const toggleMic = () => {
+    localMedia.current?.getAudioTracks().forEach(t => { t.enabled = !micOn; });
+    setMicOn(v => !v);
+  };
+
+  const toggleCam = () => {
+    localMedia.current?.getVideoTracks().forEach(t => { t.enabled = !camOn; });
+    setCamOn(v => !v);
+  };
+
+  const toggleScreenShare = async () => {
+    if (screenSharing) {
+      // Stop screen share — reconnect with camera
+      stopPublisher();
+      const camStream = localMedia.current;
+      if (camStream && streamId) {
+        try {
+          const pc = await publish(streamId, camStream);
+          window.__mwcast_pc = pc;
+        } catch (_) {}
+      }
+      setScreenSharing(false);
+    } else {
+      try {
+        // Get screen video
+        const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+        const screenTrack = screenStream.getVideoTracks()[0];
+
+        // Combine screen video with existing mic audio
+        const audioTrack = localMedia.current?.getAudioTracks()[0];
+        const publishStream = new MediaStream([
+          screenTrack,
+          ...(audioTrack ? [audioTrack] : []),
+        ]);
+
+        // Stop current WHIP and reconnect with screen stream
+        stopPublisher();
+        const pc = await publish(streamId, publishStream);
+        window.__mwcast_pc = pc;
+
+        // Show camera PiP
+        if (pipRef.current && localMedia.current) pipRef.current.srcObject = localMedia.current;
+        setScreenSharing(true);
+
+        // Auto-stop when user clicks browser's "Stop sharing"
+        screenTrack.addEventListener('ended', async () => {
+          stopPublisher();
+          const camStream = localMedia.current;
+          if (camStream && streamId) {
+            try {
+              const pc = await publish(streamId, camStream);
+              window.__mwcast_pc = pc;
+            } catch (_) {}
+          }
+          setScreenSharing(false);
+        });
+      } catch (_) {} // user cancelled picker
+    }
+  };
+
   return (
     <div className="flex flex-col xl:flex-row gap-4 max-w-[2000px] mx-auto transition-colors duration-300" style={{ height: 'calc(100vh - 96px)' }}>
       <JoinStreamModal isOpen={isJoinModalOpen} onJoin={handleJoin} />
@@ -282,33 +339,27 @@ const Stream = () => {
         <div className="relative bg-black rounded-2xl overflow-hidden ring-1 ring-slate-200 dark:ring-white/10 shadow-2xl border-2 border-slate-100 dark:border-slate-900/40 transition-colors" style={{ maxHeight: '65%', aspectRatio: '16/9' }}>
            {isHost ? (
              <div className="w-full h-full relative bg-slate-900">
-                {/* HLS output from MediaMTX — what viewers actually see */}
                 {publishState === 'publishing' ? (
-                  <LivePlayer src={HLS_URL(streamId)} className="w-full h-full" />
+                  <>
+                    <LivePlayer src={HLS_URL(streamId)} className="w-full h-full" />
+                    {/* PiP self-view during screen share */}
+                    {screenSharing && (
+                      <video ref={pipRef} autoPlay muted playsInline disablePictureInPicture
+                        className="absolute bottom-3 right-3 w-32 aspect-video object-cover rounded-xl border-2 border-white/20 shadow-2xl mirror pointer-events-none z-10" />
+                    )}
+                  </>
                 ) : (
                   <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-3">
-                    <img
-                      src="https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=1200"
-                      className="absolute inset-0 w-full h-full object-cover opacity-20 blur-md"
-                      alt=""
-                    />
+                    <img src="https://images.unsplash.com/photo-1542831371-29b0f74f9713?auto=format&fit=crop&q=80&w=1200"
+                      className="absolute inset-0 w-full h-full object-cover opacity-20 blur-md" alt="" />
                     <div className="relative z-10 flex flex-col items-center text-center px-6">
                       <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4 border border-white/10">
                         <Camera size={32} className="opacity-40" />
                       </div>
-                      <span className="text-xs font-black uppercase tracking-[0.2em]">Waiting for video source...</span>
-                      <p className="text-[10px] opacity-60 mt-1 font-medium">Push RTMP or connect a camera to start</p>
+                      <span className="text-xs font-black uppercase tracking-[0.2em]">Connecting stream...</span>
                     </div>
                   </div>
                 )}
-                {/* Local camera preview — picture-in-picture, no pointer events */}
-                <video
-                  ref={videoRef}
-                  autoPlay
-                  muted
-                  playsInline
-                  className="absolute bottom-16 right-4 w-36 aspect-video object-cover rounded-xl border-2 border-white/20 shadow-2xl mirror pointer-events-none"
-                />
              </div>
            ) : (
              <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 text-white gap-4">
@@ -326,14 +377,16 @@ const Stream = () => {
                         Back to Home
                       </button>
                    </div>
-                ) : streamData ? (
+                ) : streamData && hlsReady ? (
                    <LivePlayer src={streamData.hls_url} stopped={streamEnded} className="w-full h-full" />
                 ) : (
                    <div className="animate-pulse flex flex-col items-center gap-2">
                       <div className="w-12 h-12 bg-indigo-500/20 rounded-full flex items-center justify-center">
                          <div className="w-6 h-6 bg-indigo-500 rounded-full animate-ping"></div>
                       </div>
-                      <span className="text-xs font-bold uppercase tracking-widest text-slate-500">Connecting to stream...</span>
+                      <span className="text-xs font-bold uppercase tracking-widest text-slate-500">
+                        {streamData ? 'Waiting for stream...' : 'Connecting to stream...'}
+                      </span>
                    </div>
                 )}
              </div>
@@ -366,6 +419,29 @@ const Stream = () => {
              </div>
            )}
         </div>
+
+        {/* Host controls bar — outside player so LivePlayer controls are unobstructed */}
+        {isHost && publishState === 'publishing' && (
+          <div className="flex items-center justify-center gap-2 bg-slate-900 px-4 py-2.5 rounded-2xl border border-slate-700 shrink-0">
+            <button onClick={toggleMic} title={micOn ? 'Mute' : 'Unmute'}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${micOn ? 'bg-white/5 border-white/10 text-white hover:bg-white/10' : 'bg-red-600 border-red-600 text-white'}`}>
+              {micOn ? <Mic size={13} /> : <MicOff size={13} />}
+              {micOn ? 'Mute' : 'Unmuted'}
+            </button>
+            <button onClick={toggleCam} title={camOn ? 'Camera off' : 'Camera on'}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${camOn ? 'bg-white/5 border-white/10 text-white hover:bg-white/10' : 'bg-red-600 border-red-600 text-white'}`}>
+              {camOn ? <Camera size={13} /> : <CameraOff size={13} />}
+              {camOn ? 'Cam On' : 'Cam Off'}
+            </button>
+            {navigator.mediaDevices?.getDisplayMedia && (
+              <button onClick={toggleScreenShare}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${screenSharing ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>
+                {screenSharing ? <MonitorOff size={13} /> : <Monitor size={13} />}
+                {screenSharing ? 'Stop Sharing' : 'Share Screen'}
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Channel Info Section */}
         <div className="flex flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900/40 px-5 py-3 rounded-2xl border border-slate-200 dark:border-white/5 shadow-xl transition-colors shrink-0">

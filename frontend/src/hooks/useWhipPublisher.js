@@ -24,6 +24,15 @@ export function useWhipPublisher() {
     // Add all tracks from the media stream
     mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
 
+    // Prefer H.264 for video so MediaMTX can mux it into HLS directly
+    pc.getTransceivers().forEach(transceiver => {
+      if (transceiver.sender.track?.kind === 'video') {
+        const codecs = RTCRtpSender.getCapabilities('video')?.codecs || [];
+        const h264 = codecs.filter(c => c.mimeType === 'video/H264');
+        if (h264.length > 0) transceiver.setCodecPreferences(h264);
+      }
+    });
+
     // Create offer
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -38,6 +47,9 @@ export function useWhipPublisher() {
       setTimeout(resolve, 2000);
     });
 
+    // Bail out if the connection was closed during ICE gathering (StrictMode / unmount)
+    if (pc.signalingState === 'closed') return;
+
     // Send offer to MediaMTX WHIP endpoint
     const res = await fetch(WHIP_URL(streamId), {
       method: 'POST',
@@ -50,6 +62,10 @@ export function useWhipPublisher() {
     }
 
     const answerSdp = await res.text();
+
+    // Bail out again in case of unmount between fetch and setRemoteDescription
+    if (pc.signalingState === 'closed') return;
+
     await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
 
     return pc;
@@ -62,5 +78,5 @@ export function useWhipPublisher() {
     }
   }, []);
 
-  return { publish, stop };
+  return { publish, stop, pcRef };
 }
