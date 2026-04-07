@@ -73,9 +73,10 @@ export default function GoLiveModal({ isOpen, onClose }) {
     setCamOn(v => !v);
   };
 
-  const pollHlsReady = (id) => new Promise(resolve => {
+  const pollHlsReady = (id) => new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { clearInterval(iv); reject(new Error('HLS stream timed out. Check media server.')); }, 30000);
     const iv = setInterval(async () => {
-      try { const r = await fetch(HLS_URL(id)); if (r.ok) { clearInterval(iv); resolve(); } } catch (_) {}
+      try { const r = await fetch(HLS_URL(id)); if (r.ok) { clearInterval(iv); clearTimeout(timeout); resolve(); } } catch (_) {}
     }, 2000);
   });
 
@@ -212,7 +213,6 @@ export default function GoLiveModal({ isOpen, onClose }) {
                 <Loader size={28} className="text-indigo-400 animate-spin" />
               </div>
               <p className="font-black text-slate-800 dark:text-white text-sm uppercase tracking-widest">Setting up stream...</p>
-              <p className="text-xs text-slate-400 font-medium">Waiting for HLS pipeline to be ready</p>
             </div>
           )}
 

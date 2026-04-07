@@ -8,13 +8,17 @@ hls: true
 hlsAddress: :8888
 hlsSegmentCount: 7
 hlsSegmentDuration: 1s
+hlsAllowOrigin: '*'
 
 webrtc: true
 webrtcAddress: :8889
 webrtcICEUDPMuxAddress: :8889
+webrtcICEHostNAT1To1IPs: [10.0.0.17]
+webrtcAllowOrigin: '*'
 
 api: true
 apiAddress: :9997
+apiAllowOrigin: '*'
 
 # Authentication — allow anyone to publish, read, and use API
 authMethod: internal
