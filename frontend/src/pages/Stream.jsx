@@ -302,7 +302,7 @@ const Stream = () => {
   };
 
   return (
-    <div className="flex flex-col xl:flex-row gap-4 max-w-[2000px] mx-auto transition-colors duration-300" style={{ height: 'calc(100vh - 96px)' }}>
+    <div className="flex flex-col xl:flex-row gap-4 max-w-[2000px] mx-auto transition-colors duration-300 xl:h-[calc(100vh-96px)]">
       <JoinStreamModal isOpen={isJoinModalOpen} onJoin={handleJoin} />
 
       {/* Stop Stream Confirmation Modal */}
@@ -341,10 +341,10 @@ const Stream = () => {
       )}
       
       {/* Main Content Area */}
-      <div className="flex flex-col flex-1 gap-3 min-h-0">
+      <div className="flex flex-col flex-1 gap-3 min-h-0 min-w-0">
         
         {/* Video Player Section — capped so channel info always fits */}
-        <div className="relative bg-black rounded-2xl overflow-hidden ring-1 ring-slate-200 dark:ring-white/10 shadow-2xl border-2 border-slate-100 dark:border-slate-900/40 transition-colors" style={{ maxHeight: '65%', aspectRatio: '16/9' }}>
+        <div className="relative bg-black rounded-2xl overflow-hidden ring-1 ring-slate-200 dark:ring-white/10 shadow-2xl border-2 border-slate-100 dark:border-slate-900/40 transition-colors w-full aspect-video xl:aspect-auto xl:flex-1 xl:min-h-0">
            {isHost ? (
              <div className="w-full h-full relative bg-slate-900">
                 {publishState === 'publishing' ? (
@@ -430,66 +430,67 @@ const Stream = () => {
 
         {/* Host controls bar — outside player so LivePlayer controls are unobstructed */}
         {isHost && publishState === 'publishing' && (
-          <div className="flex items-center justify-center gap-2 bg-slate-900 px-4 py-2.5 rounded-2xl border border-slate-700 shrink-0">
+          <div className="flex items-center justify-center flex-wrap gap-2 bg-slate-900 px-4 py-2.5 rounded-2xl border border-slate-700 shrink-0">
             <button onClick={toggleMic} title={micOn ? 'Mute' : 'Unmute'}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${micOn ? 'bg-white/5 border-white/10 text-white hover:bg-white/10' : 'bg-red-600 border-red-600 text-white'}`}>
               {micOn ? <Mic size={13} /> : <MicOff size={13} />}
-              {micOn ? 'Mute' : 'Unmuted'}
+              <span className="hidden sm:inline">{micOn ? 'Mute' : 'Unmuted'}</span>
             </button>
             <button onClick={toggleCam} title={camOn ? 'Camera off' : 'Camera on'}
               className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${camOn ? 'bg-white/5 border-white/10 text-white hover:bg-white/10' : 'bg-red-600 border-red-600 text-white'}`}>
               {camOn ? <Camera size={13} /> : <CameraOff size={13} />}
-              {camOn ? 'Cam On' : 'Cam Off'}
+              <span className="hidden sm:inline">{camOn ? 'Cam On' : 'Cam Off'}</span>
             </button>
             {navigator.mediaDevices?.getDisplayMedia && (
               <button onClick={toggleScreenShare}
                 className={`flex items-center gap-1.5 px-3 py-2 rounded-xl border text-xs font-black uppercase tracking-widest transition-all ${screenSharing ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>
                 {screenSharing ? <MonitorOff size={13} /> : <Monitor size={13} />}
-                {screenSharing ? 'Stop Sharing' : 'Share Screen'}
+                <span className="hidden sm:inline">{screenSharing ? 'Stop Sharing' : 'Share Screen'}</span>
               </button>
             )}
           </div>
         )}
 
         {/* Channel Info Section */}
-        <div className="flex flex-row items-center justify-between gap-3 bg-white dark:bg-slate-900/40 px-5 py-3 rounded-2xl border border-slate-200 dark:border-white/5 shadow-xl transition-colors shrink-0">
-          <div className="flex items-center gap-4 min-w-0">
+        <div className="flex flex-row items-center justify-between gap-2 bg-white dark:bg-slate-900/40 px-4 py-3 rounded-2xl border border-slate-200 dark:border-white/5 shadow-xl transition-colors shrink-0">
+          <div className="flex items-center gap-3 min-w-0">
             <div className="relative shrink-0">
                <img 
                  src={`https://api.dicebear.com/7.x/initials/svg?seed=${streamerName}&backgroundColor=6366f1,ec4899,8b5cf6,06b6d4`} 
                  alt={streamerName} 
-                 className="w-11 h-11 rounded-xl ring-4 ring-indigo-500/10 dark:ring-indigo-500/20 shadow-xl bg-white dark:bg-slate-800" 
+                 className="w-10 h-10 rounded-xl ring-4 ring-indigo-500/10 dark:ring-indigo-500/20 shadow-xl bg-white dark:bg-slate-800" 
                />
                <div className="absolute -bottom-1 -right-1 w-4 h-4 bg-green-500 border-2 border-white dark:border-slate-900 rounded-full"></div>
             </div>
             <div className="min-w-0">
-              <h2 className="text-base font-black text-slate-800 dark:text-white tracking-tight truncate">@{streamData?.username || streamerName}</h2>
+              <h2 className="text-sm font-black text-slate-800 dark:text-white tracking-tight truncate">@{streamData?.username || streamerName}</h2>
               <p className="text-indigo-600 dark:text-indigo-400 font-bold text-xs tracking-wide truncate">{streamData?.title || initialTitle}</p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             {isHost && (
               <button
                 onClick={() => setIsStopModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-xl bg-red-600 hover:bg-red-500 text-white active:scale-95"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-xl bg-red-600 hover:bg-red-500 text-white active:scale-95"
               >
                 <Square size={12} fill="currentColor" />
-                Stop Stream
+                <span className="hidden sm:inline">Stop Stream</span>
+                <span className="sm:hidden">Stop</span>
               </button>
             )}
             <button 
               onClick={copyLink}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-xl ${copied ? 'bg-emerald-500 text-white scale-105' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl font-black text-xs uppercase tracking-widest transition-all shadow-xl ${copied ? 'bg-emerald-500 text-white scale-105' : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700'}`}
             >
               {copied ? <Check size={14} /> : <Copy size={14} />}
-              {copied ? "Copied!" : "Share"}
+              <span className="hidden sm:inline">{copied ? "Copied!" : "Share"}</span>
             </button>
             <button 
               onClick={() => setIsLiked(!isLiked)}
-              className={`p-2.5 rounded-xl transition-all active:scale-90 shadow-xl ${isLiked ? 'bg-pink-500/20 text-pink-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}
+              className={`p-2 rounded-xl transition-all active:scale-90 shadow-xl ${isLiked ? 'bg-pink-500/20 text-pink-500' : 'bg-slate-100 dark:bg-slate-800 text-slate-400'}`}
             >
-              <Heart size={18} fill={isLiked ? "currentColor" : "none"} />
+              <Heart size={16} fill={isLiked ? "currentColor" : "none"} />
             </button>
           </div>
         </div>
@@ -531,8 +532,8 @@ const Stream = () => {
         )}
       </div>
 
-      {/* Chat Sidebar — pinned full height */}
-      <div className="w-full xl:w-[380px] flex flex-col bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl backdrop-blur-sm transition-colors min-h-0">
+      {/* Chat Sidebar — pinned full height on xl, fixed height on mobile */}
+      <div className="w-full xl:w-[380px] flex flex-col bg-slate-50 dark:bg-slate-900/60 rounded-2xl border border-slate-200 dark:border-white/10 overflow-hidden shadow-2xl backdrop-blur-sm transition-colors min-h-0 h-[400px] xl:h-auto">
         <div className="p-4 border-b border-slate-200 dark:border-white/5 bg-white dark:bg-slate-900/40 flex items-center gap-2 shrink-0">
           <div className="p-1.5 bg-indigo-500/10 dark:bg-indigo-500/20 rounded-lg">
              <MessageCircle size={16} className="text-indigo-600 dark:text-indigo-400" />
