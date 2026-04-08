@@ -14,6 +14,10 @@ export const WHIP_URL = (streamId) => IS_LOCAL
   ? `http://localhost:8889/live/${streamId}/whip`
   : `http://${HOST}:8889/live/${streamId}/whip`;
 
+export const WHEP_URL = (streamId) => IS_LOCAL
+  ? `http://localhost:8889/live/${streamId}/whep`
+  : `http://${HOST}:8889/live/${streamId}/whep`;
+
 export const HLS_URL = (streamId) => IS_LOCAL
   ? `http://localhost:8888/live/${streamId}/index.m3u8`
   : `http://${HOST}:8888/live/${streamId}/index.m3u8`;

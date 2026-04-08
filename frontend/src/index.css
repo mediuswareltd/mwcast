@@ -63,3 +63,8 @@
 .shadow-glow {
   box-shadow: 0 0 15px rgba(99, 102, 241, 0.4);
 }
+
+/* Mirror / flip self-view video */
+.mirror {
+  transform: scaleX(-1);
+}

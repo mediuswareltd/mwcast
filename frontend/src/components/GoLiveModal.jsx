@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Video, X, Mic, MicOff, Camera, CameraOff, Play, Loader, Radio } from 'lucide-react';
 import { API_BASE_URL, HLS_URL } from '../config';
@@ -6,39 +6,35 @@ import { useWhipPublisher } from '../hooks/useWhipPublisher';
 
 const slugify = (s) => s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-const buildAudioWithBlackVideo = (audioTrack) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = 1280; canvas.height = 720;
-  const ctx = canvas.getContext('2d');
-  const fill = () => { ctx.fillStyle = '#000'; ctx.fillRect(0, 0, 1280, 720); };
-  fill();
-  const iv = setInterval(fill, 1000 / 25);
-  const vt = canvas.captureStream(25).getVideoTracks()[0];
-  vt.addEventListener('ended', () => clearInterval(iv));
-  return new MediaStream([vt, audioTrack]);
-};
-
 export default function GoLiveModal({ isOpen, onClose }) {
   const navigate = useNavigate();
   const { publish, stop: stopWhip } = useWhipPublisher();
 
-  const [step, setStep]         = useState('setup'); // setup | connecting | ready
+  const [step, setStep]         = useState('setup');
   const [title, setTitle]       = useState('');
   const [username, setUsername] = useState('');
   const [error, setError]       = useState(null);
   const [streamId, setStreamId] = useState(null);
   const [micOn, setMicOn]       = useState(true);
   const [camOn, setCamOn]       = useState(true);
+  const [hasCam, setHasCam]     = useState(true);
+  const [mediaReady, setMediaReady] = useState(false);
 
-  const videoRef  = useRef(null);
-  const mediaRef  = useRef(null);
+  const videoRef = useRef(null);
+  const mediaRef = useRef(null);
+
+  // Stable video ref callback — won't remount the element on re-renders
+  const setVideoRef = useCallback((el) => {
+    videoRef.current = el;
+    if (el && mediaRef.current) el.srcObject = mediaRef.current;
+  }, []);
 
   // Reset on open
   useEffect(() => {
     if (isOpen) {
       setStep('setup'); setTitle(''); setUsername('');
       setError(null); setStreamId(null);
-      setMicOn(true); setCamOn(true);
+      setMicOn(true); setCamOn(true); setHasCam(true); setMediaReady(false);
     } else {
       stopMediaTracks();
     }
@@ -49,13 +45,19 @@ export default function GoLiveModal({ isOpen, onClose }) {
     if (!isOpen || step !== 'setup') return;
     if (!navigator.mediaDevices?.getUserMedia) return;
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(s => { mediaRef.current = s; if (videoRef.current) videoRef.current.srcObject = s; })
+      .then(s => {
+        setHasCam(true);
+        mediaRef.current = s;
+        if (videoRef.current) videoRef.current.srcObject = s;
+        setMediaReady(true);
+      })
       .catch(() => {
+        setHasCam(false);
+        setCamOn(false);
         navigator.mediaDevices.getUserMedia({ video: false, audio: true })
-          .then(s => { mediaRef.current = s; setCamOn(false); })
-          .catch(() => setCamOn(false));
+          .then(s => { mediaRef.current = s; setMediaReady(true); })
+          .catch(() => { setMediaReady(true); });
       });
-    // No cleanup here — tracks must stay alive for WHIP publishing
   }, [isOpen, step]);
 
   const stopMediaTracks = () => {
@@ -63,14 +65,19 @@ export default function GoLiveModal({ isOpen, onClose }) {
     mediaRef.current = null;
   };
 
-  // Toggle mic/cam in preview
   const toggleMic = () => {
     mediaRef.current?.getAudioTracks().forEach(t => { t.enabled = !micOn; });
     setMicOn(v => !v);
   };
+
   const toggleCam = () => {
-    mediaRef.current?.getVideoTracks().forEach(t => { t.enabled = !camOn; });
-    setCamOn(v => !v);
+    const next = !camOn;
+    mediaRef.current?.getVideoTracks().forEach(t => { t.enabled = next; });
+    setCamOn(next);
+    // Re-attach stream to video element when turning cam back on
+    if (next && videoRef.current && mediaRef.current) {
+      videoRef.current.srcObject = mediaRef.current;
+    }
   };
 
   const pollHlsReady = (id) => new Promise((resolve, reject) => {
@@ -85,7 +92,6 @@ export default function GoLiveModal({ isOpen, onClose }) {
     setError(null);
     setStep('connecting');
     try {
-      // 1. Create stream
       const res = await fetch(`${API_BASE_URL}/api/v1/streams/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -96,26 +102,15 @@ export default function GoLiveModal({ isOpen, onClose }) {
       const id = data.stream_id;
       setStreamId(id);
 
-      // 2. Build publish stream from existing preview media
-      let publishStream;
-      if (mediaRef.current) {
-        const videoTracks = mediaRef.current.getVideoTracks();
-        const audioTracks = mediaRef.current.getAudioTracks();
-        if (videoTracks.length > 0) {
-          publishStream = mediaRef.current;
-        } else if (audioTracks.length > 0) {
-          publishStream = buildAudioWithBlackVideo(audioTracks[0]);
-        }
-      }
-
+      const publishStream = mediaRef.current ?? null;
       if (publishStream) {
         const pc = await publish(id, publishStream);
-        // Expose stream + pc for host controls in Stream page
-        window.__mwcast_stream = publishStream;
-        window.__mwcast_pc = pc;
+        window.__mwcast_stream   = publishStream;
+        window.__mwcast_username = username;
+        window.__mwcast_has_cam  = hasCam;
+        window.__mwcast_pc       = pc;
       }
 
-      // 3. Wait for HLS
       await pollHlsReady(id);
       setStep('ready');
     } catch (err) {
@@ -158,29 +153,36 @@ export default function GoLiveModal({ isOpen, onClose }) {
         </div>
 
         <div className="p-6 space-y-4">
-
-          {/* SETUP */}
           {step === 'setup' && (
             <form onSubmit={e => { e.preventDefault(); handleGoLive(); }} className="space-y-4">
               {error && <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded-2xl text-xs font-bold">{error}</div>}
 
-              {/* Camera preview */}
+              {/* Camera preview — video always in DOM, hidden via CSS to avoid remount blink */}
               <div className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden">
-                {camOn && mediaRef.current?.getVideoTracks().length > 0
-                  ? <video ref={videoRef} autoPlay muted playsInline disablePictureInPicture className="w-full h-full object-cover mirror" />
-                  : <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                      <Camera size={32} className="text-slate-600" />
-                      <p className="text-slate-500 text-xs font-medium">{camOn ? 'No camera detected' : 'Camera off'}</p>
-                    </div>
-                }
+                {/* Always render video — just hide it when not needed */}
+                <video
+                  ref={setVideoRef}
+                  autoPlay muted playsInline disablePictureInPicture
+                  className={`w-full h-full object-cover mirror ${camOn && mediaReady && hasCam ? '' : 'hidden'}`}
+                />
+                {/* Placeholder shown when video is hidden */}
+                {(!camOn || !mediaReady || !hasCam) && (
+                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                    <Camera size={32} className="text-slate-600" />
+                    <p className="text-slate-500 text-xs font-medium">
+                      {!mediaReady ? 'Requesting camera...' : !hasCam ? 'No camera detected' : 'Camera off'}
+                    </p>
+                  </div>
+                )}
                 {/* Mic / Cam toggles */}
                 <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
                   <button type="button" onClick={toggleMic}
                     className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${micOn ? 'bg-white/10 border-white/20 text-white' : 'bg-red-600 border-red-600 text-white'}`}>
                     {micOn ? <Mic size={16} /> : <MicOff size={16} />}
                   </button>
-                  <button type="button" onClick={toggleCam}
-                    className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${camOn ? 'bg-white/10 border-white/20 text-white' : 'bg-red-600 border-red-600 text-white'}`}>
+                  <button type="button" onClick={hasCam ? toggleCam : undefined} disabled={!hasCam}
+                    title={!hasCam ? 'No camera detected' : camOn ? 'Turn camera off' : 'Turn camera on'}
+                    className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${!hasCam ? 'opacity-40 cursor-not-allowed bg-slate-700 border-slate-600 text-slate-400' : camOn ? 'bg-white/10 border-white/20 text-white' : 'bg-red-600 border-red-600 text-white'}`}>
                     {camOn ? <Camera size={16} /> : <CameraOff size={16} />}
                   </button>
                 </div>
@@ -206,7 +208,6 @@ export default function GoLiveModal({ isOpen, onClose }) {
             </form>
           )}
 
-          {/* CONNECTING */}
           {step === 'connecting' && (
             <div className="py-10 flex flex-col items-center gap-4">
               <div className="w-16 h-16 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
@@ -216,7 +217,6 @@ export default function GoLiveModal({ isOpen, onClose }) {
             </div>
           )}
 
-          {/* READY */}
           {step === 'ready' && (
             <div className="py-8 flex flex-col items-center gap-5">
               <div className="relative">
@@ -240,3 +240,4 @@ export default function GoLiveModal({ isOpen, onClose }) {
     </div>
   );
 }
+
