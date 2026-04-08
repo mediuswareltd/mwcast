@@ -39,11 +39,11 @@ authInternalUsers:
 # Paths
 paths:
   all:
+    # Single ffmpeg process with multiple outputs — one decode, multiple encodes.
+    # Much cheaper than 5 separate ffmpeg processes firing simultaneously.
     runOnReady: >
       ffmpeg -i rtsp://localhost:8554/$MTX_PATH
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=1280:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_720p
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=854:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_480p
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=640:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_360p
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=426:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_240p
-      -c:a copy -c:v libx264 -preset superfast -filter:v scale=256:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_144p
+      -c:a copy -c:v libx264 -preset veryfast -crf 23 -filter:v scale=1280:-2 -f rtsp rtsp://localhost:8554/${MTX_PATH}_720p
+      -c:a copy -c:v libx264 -preset veryfast -crf 26 -filter:v scale=854:-2  -f rtsp rtsp://localhost:8554/${MTX_PATH}_480p
+      -c:a copy -c:v libx264 -preset veryfast -crf 28 -filter:v scale=640:-2  -f rtsp rtsp://localhost:8554/${MTX_PATH}_360p
     runOnReadyRestart: false
