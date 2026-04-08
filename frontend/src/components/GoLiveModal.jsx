@@ -35,7 +35,8 @@ export default function GoLiveModal({ isOpen, onClose }) {
       setStep('setup'); setTitle(''); setUsername('');
       setError(null); setStreamId(null);
       setMicOn(true); setCamOn(true); setHasCam(true); setMediaReady(false);
-    } else {
+    } else if (step !== 'ready') {
+      // Only stop tracks if user cancelled — not when navigating into the stream
       stopMediaTracks();
     }
   }, [isOpen]);

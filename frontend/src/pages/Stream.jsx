@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { MessageCircle, Send, Heart, Shield, Copy, Check, Mic, MicOff, Camera, CameraOff, Monitor, MonitorOff, Square, Radio, Minimize2 } from 'lucide-react';
 import JoinStreamModal from '../components/JoinStreamModal';
@@ -44,13 +44,17 @@ const Stream = () => {
   const [isStopping, setIsStopping] = useState(false);
   const [streamEnded, setStreamEnded] = useState(false);
   const [publishState, setPublishState] = useState('idle');
-  const [hlsReady, setHlsReady] = useState(false); // kept for host HLS poll only
 
   // Host state
   const [micOn, setMicOn]           = useState(true);
   const [camOn, setCamOn]           = useState(true);
   const [hasCam, setHasCam]         = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
+
+  // Keep refs in sync so async callbacks always have fresh values
+  useEffect(() => { micOnRef.current = micOn; }, [micOn]);
+  useEffect(() => { camOnRef.current = camOn; }, [camOn]);
+  useEffect(() => { screenSharingRef.current = screenSharing; }, [screenSharing]);
 
   // Viewer: host state received over WS
   // Default hostCamOn to false — show avatar until host confirms cam is on.
@@ -73,8 +77,12 @@ const Stream = () => {
   const screenTrackRef = useRef(null);
   const republishRef   = useRef(null); // stable ref to republish fn (avoids stale closure in init)
   const pipDragOffset  = useRef({ x: 0, y: 0 });
-  const [pipStyle, setPipStyle]           = useState({ bottom: 12, right: 12 });
-  const [pipMinimized, setPipMinimized]   = useState(false);
+  // Stable refs for current host state — used in WS/async callbacks to avoid stale closures
+  const micOnRef         = useRef(true);
+  const camOnRef         = useRef(true);
+  const screenSharingRef = useRef(false);
+  const [pipStyle, setPipStyle]         = useState({ bottom: 12, right: 12 });
+  const [pipMinimized, setPipMinimized] = useState(false);
   const wsRef      = useRef(null);
   const chatEndRef = useRef(null);
   const hlsPollRef = useRef(null);
@@ -106,7 +114,12 @@ const Stream = () => {
         setMicOn(audioEnabled);
         setCamOn(camAvailable ? videoEnabled : false);
         setHasCam(camAvailable);
+        micOnRef.current = audioEnabled;
+        camOnRef.current = camAvailable ? videoEnabled : false;
         if (localVideoRef.current) localVideoRef.current.srcObject = localMedia.current;
+        // Republish from Stream.jsx's own WHIP instance — GoLiveModal's connection
+        // is about to die when the modal unmounts/closes.
+        await republishRef.current({ cam: camAvailable ? videoEnabled : false, screen: false });
       } else {
         // Page was refreshed — re-acquire media and republish
         try {
@@ -192,8 +205,8 @@ const Stream = () => {
         if (isHost) {
           socket.send(JSON.stringify({
             type: 'host_state',
-            camOn,
-            screenSharing,
+            camOn: camOnRef.current,
+            screenSharing: screenSharingRef.current,
             hostName: window.__mwcast_username || streamerName,
           }));
         }
@@ -246,14 +259,14 @@ const Stream = () => {
       pipRef.current.srcObject = localMedia.current;
       pipRef.current.play().catch(() => {});
     }
-  }, [isHost, camOn, publishState, screenSharing]);
+  }, [isHost, camOn, publishState, screenSharing, pipMinimized]);
 
   const broadcastHostState = (state) => {
     if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
     wsRef.current.send(JSON.stringify({
       type: 'host_state',
-      camOn: state.camOn ?? camOn,
-      screenSharing: state.screenSharing ?? screenSharing,
+      camOn: state.camOn ?? camOnRef.current,
+      screenSharing: state.screenSharing ?? screenSharingRef.current,
       hostName: hostDisplayName,
     }));
   };
@@ -262,11 +275,9 @@ const Stream = () => {
   const republish = async ({ cam, screen }) => {
     stopPublisher();
     const audioTrack = localMedia.current?.getAudioTracks()[0] ?? null;
-    if (audioTrack) audioTrack.enabled = micOn;
+    if (audioTrack) audioTrack.enabled = micOnRef.current;
 
     if (screen && screenTrackRef.current) {
-      // Screen share — publish screen to {streamId}_screen
-      // Do NOT disable the camera track — it's needed for the _cam PiP stream
       const stream = new MediaStream([
         screenTrackRef.current,
         ...(audioTrack ? [audioTrack] : []),
@@ -276,7 +287,6 @@ const Stream = () => {
         window.__mwcast_pc = pc;
       } catch (_) {}
     } else {
-      // Camera mode — publish to main {streamId} path
       const videoTrack = localMedia.current?.getVideoTracks()[0] ?? null;
       if (videoTrack) videoTrack.enabled = cam;
       const stream = cam && videoTrack
@@ -295,6 +305,9 @@ const Stream = () => {
   const toggleMic = () => {
     const next = !micOn;
     setMicOn(next);
+    micOnRef.current = next;
+    // Just toggle the track — the existing WHIP peer connection handles it.
+    // Republishing would tear down and restart the stream unnecessarily.
     const audioTrack = localMedia.current?.getAudioTracks()[0];
     if (audioTrack) audioTrack.enabled = next;
   };
@@ -303,6 +316,7 @@ const Stream = () => {
     if (!hasCam) return;
     const next = !camOn;
     setCamOn(next);
+    camOnRef.current = next;
     if (!screenSharing) {
       await republish({ cam: next, screen: false });
       // Re-attach stream to self-view (needed after republish creates new MediaStream)
@@ -321,7 +335,7 @@ const Stream = () => {
         stopCamPublisher();
       }
     }
-    broadcastHostState({ camOn: next, screenSharing });
+    broadcastHostState({ camOn: next, screenSharing: screenSharingRef.current });
   };
 
   const toggleScreenShare = async () => {
@@ -329,18 +343,20 @@ const Stream = () => {
       screenTrackRef.current?.stop();
       screenTrackRef.current = null;
       setScreenSharing(false);
+      screenSharingRef.current = false;
       if (screenVideoRef.current) { screenVideoRef.current.srcObject = null; }
       stopPublisher(); // stops the _screen WHIP connection
       stopCamPublisher();
-      await republish({ cam: camOn, screen: false }); // republish camera to main path
+      await republish({ cam: camOnRef.current, screen: false }); // republish camera to main path
       if (localVideoRef.current) localVideoRef.current.srcObject = localMedia.current;
-      broadcastHostState({ camOn, screenSharing: false });
+      broadcastHostState({ camOn: camOnRef.current, screenSharing: false });
     } else {
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
         const screenTrack = screenStream.getVideoTracks()[0];
         screenTrackRef.current = screenTrack;
         setScreenSharing(true);
+        screenSharingRef.current = true;
         setPipStyle({ bottom: 12, right: 12 });
         setPipMinimized(false);
         if (pipRef.current) pipRef.current.srcObject = localMedia.current;
@@ -364,17 +380,18 @@ const Stream = () => {
           }
         }
 
-        broadcastHostState({ camOn, screenSharing: true });
+        broadcastHostState({ camOn: camOnRef.current, screenSharing: true });
 
         screenTrack.addEventListener('ended', async () => {
           screenTrackRef.current = null;
           setScreenSharing(false);
+          screenSharingRef.current = false;
           if (screenVideoRef.current) { screenVideoRef.current.srcObject = null; }
           stopPublisher();
           stopCamPublisher();
-          await republish({ cam: camOn, screen: false });
+          await republish({ cam: camOnRef.current, screen: false });
           if (localVideoRef.current) localVideoRef.current.srcObject = localMedia.current;
-          broadcastHostState({ camOn, screenSharing: false });
+          broadcastHostState({ camOn: camOnRef.current, screenSharing: false });
         });
       } catch (_) {}
     }
@@ -480,17 +497,14 @@ const Stream = () => {
         const res = await fetch(`http://${window.location.hostname}:9997/v3/paths/get/live/${streamId}`);
         if (!res.ok) return;
         const data = await res.json();
-        // If there's a source (publisher) on this path, treat cam as on
-        if (data.source && !hostCamOn) {
-          setHostCamOn(true);
-        }
+        // Always update based on whether a publisher is active
+        setHostCamOn(!!(data.source));
       } catch (_) {}
     };
-    // Check immediately and then every 3s
     check();
     const iv = setInterval(check, 3000);
     return () => clearInterval(iv);
-  }, [isHost, streamId]); // intentionally exclude hostCamOn to avoid re-creating interval
+  }, [isHost, streamId]);
   // With WHEP, WhepPlayer handles its own connection — no hlsReady needed
   const viewerShowStream = !isHost && !streamEnded && streamData && (hostCamOn || hostScreenSharing);
   const viewerShowAvatar = !isHost && !streamEnded && streamData && !hostScreenSharing && !hostCamOn;
@@ -547,8 +561,20 @@ const Stream = () => {
                 <>
                   {/* Main view: screen share preview OR camera OR avatar */}
                   {screenSharing ? (
-                    <video ref={screenVideoRef} autoPlay muted playsInline
-                      className="w-full h-full object-contain bg-slate-950" />
+                    <div className="w-full h-full relative bg-slate-950 flex flex-col items-center justify-center gap-4">
+                      <div className="w-16 h-16 bg-indigo-500/10 rounded-2xl flex items-center justify-center border border-indigo-500/20">
+                        <Monitor size={32} className="text-indigo-400" />
+                      </div>
+                      <div className="text-center">
+                        <p className="text-white font-black text-base tracking-tight">You are sharing your screen</p>
+                      </div>
+                      <button onClick={toggleScreenShare}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-500 text-white text-xs font-black uppercase tracking-widest rounded-xl transition-all">
+                        <MonitorOff size={13} /> Stop Sharing
+                      </button>
+                      {/* Hidden video keeps srcObject alive for the stream */}
+                      <video ref={screenVideoRef} autoPlay muted playsInline className="hidden" />
+                    </div>
                   ) : camOn ? (
                     <video
                       ref={localVideoRef}
@@ -668,7 +694,7 @@ const Stream = () => {
                       ) : (
                         <>
                           {hostCamOn
-                            ? <WhepPlayer streamId={pipStreamId} stopped={streamEnded} className="w-full h-full" />
+                            ? <WhepPlayer streamId={pipStreamId} stopped={streamEnded} className="w-full h-full" controls={false} />
                             : <div className="w-full h-full flex items-center justify-center bg-slate-800">
                                 <div className="w-12 h-12 rounded-full bg-indigo-600/30 border border-indigo-500/40 flex items-center justify-center">
                                   <span className="text-base font-black text-indigo-300 select-none">
