@@ -57,6 +57,9 @@ const Stream = () => {
   const [publishState, setPublishState] = useState('idle');
   const [showSettings, setShowSettings] = useState(false);
 
+  // Screen share is not supported on mobile browsers
+  const canScreenShare = !!navigator.mediaDevices?.getDisplayMedia;
+
   // Host state
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
@@ -787,11 +790,13 @@ const Stream = () => {
               {camOn ? <Camera size={14} /> : <CameraOff size={14} />}
               <span className="hidden sm:inline">Cam</span>
             </button>
+            {canScreenShare && (
             <button onClick={toggleScreenShare}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[10px] font-bold uppercase tracking-widest transition-all ${screenSharing ? 'bg-indigo-600 border-indigo-600 text-white shadow-lg shadow-indigo-600/20' : 'bg-white/5 border-white/10 text-white hover:bg-white/10'}`}>
               {screenSharing ? <MonitorOff size={14} /> : <Monitor size={14} />}
               <span className="hidden sm:inline">Screen</span>
             </button>
+            )}
             <div className="w-px h-6 bg-white/10 mx-1" />
             <button onClick={() => setShowSettings(!showSettings)}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[10px] font-bold uppercase tracking-widest transition-all ${showSettings ? 'bg-slate-700 border-slate-600 text-white' : 'bg-white/5 border-white/10 text-slate-400 hover:text-white hover:bg-white/10'}`}>

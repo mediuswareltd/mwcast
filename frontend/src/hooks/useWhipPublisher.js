@@ -25,11 +25,16 @@ export function useWhipPublisher() {
     mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
 
     // Prefer H.264 for video so MediaMTX can mux it into HLS directly
+    // Wrapped in try/catch — mobile browsers (Safari/Firefox) may not support setCodecPreferences
     pc.getTransceivers().forEach(transceiver => {
       if (transceiver.sender.track?.kind === 'video') {
-        const codecs = RTCRtpSender.getCapabilities('video')?.codecs || [];
-        const h264 = codecs.filter(c => c.mimeType === 'video/H264');
-        if (h264.length > 0) transceiver.setCodecPreferences(h264);
+        try {
+          const codecs = RTCRtpSender.getCapabilities('video')?.codecs || [];
+          const h264 = codecs.filter(c => c.mimeType === 'video/H264');
+          if (h264.length > 0) transceiver.setCodecPreferences(h264);
+        } catch (_) {
+          // setCodecPreferences not supported — browser will negotiate codec automatically
+        }
       }
     });
 
