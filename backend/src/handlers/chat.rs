@@ -70,12 +70,32 @@ pub async fn ws_chat(
 
     let is_first = {
         let mut entry = rooms.get_ref().entry(chat_room_id.clone()).or_default();
-        let first = entry.is_empty();
-        entry.push(session.clone());
-        first
+        entry.is_empty()
+        // Note: new session is added AFTER the join broadcast below
     };
 
     info!("'{}' joined chat room: {}", username, chat_room_id);
+
+    // Broadcast join notification to existing clients BEFORE adding the new session
+    {
+        let join_msg = serde_json::json!({
+            "type": "system",
+            "event": "join",
+            "username": username,
+        }).to_string();
+        if let Some(mut clients) = rooms.get_mut(&chat_room_id) {
+            let mut alive = Vec::with_capacity(clients.len());
+            for mut s in clients.drain(..) {
+                if s.text(join_msg.clone()).await.is_ok() {
+                    alive.push(s);
+                }
+            }
+            *clients = alive;
+        }
+    }
+
+    // Now add the new session to the room
+    rooms.get_ref().entry(chat_room_id.clone()).or_default().push(session.clone());
 
     // One Kafka consumer per room. Restarts automatically on failure.
     // Exits only when the room has no more clients.
@@ -180,9 +200,8 @@ pub async fn ws_chat(
                         .unwrap_or("")
                         .to_string();
 
-                    // host_state: broadcast directly in-memory, skip Kafka.
-                    // These are control signals, not chat — no need for persistence.
-                    if msg_type == "host_state" {
+                    // host_state / request_host_state / system: broadcast directly in-memory, skip Kafka.
+                    if msg_type == "host_state" || msg_type == "request_host_state" || msg_type == "system" {
                         let broadcast = match parsed {
                             Some(mut val) => {
                                 val["username"]  = serde_json::json!(username);

@@ -228,6 +228,9 @@ const Stream = () => {
             screenSharing: screenSharingRef.current,
             hostName: window.__mwcast_username || streamerName,
           }));
+        } else {
+          // Guest: request current host state on connect
+          socket.send(JSON.stringify({ type: 'request_host_state' }));
         }
       };
       socket.onmessage = (event) => {
@@ -238,6 +241,28 @@ const Stream = () => {
           setHostCamOn(data.camOn ?? true);
           setHostScreenSharing(data.screenSharing ?? false);
           if (data.hostName) setHostName(data.hostName);
+          return;
+        }
+        // Guest is requesting host state — host responds
+        if (data.type === 'request_host_state' && isHost) {
+          if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({
+              type: 'host_state',
+              camOn: camOnRef.current,
+              screenSharing: screenSharingRef.current,
+              hostName: window.__mwcast_username || streamerName,
+            }));
+          }
+          return;
+        }
+        // System event (join/leave)
+        if (data.type === 'system') {
+          setMessages(prev => [...prev, {
+            system: true,
+            event: data.event,
+            username: data.username,
+            time: Date.now(),
+          }].slice(-100));
           return;
         }
           setMessages(prev => {
@@ -314,7 +339,9 @@ const Stream = () => {
       if (videoTrack) videoTrack.enabled = cam;
       const stream = cam && videoTrack
         ? new MediaStream([videoTrack, ...(audioTrack ? [audioTrack] : [])])
-        : buildSilentStream(audioTrack);
+        : audioTrack
+          ? new MediaStream([audioTrack])
+          : new MediaStream();
       try {
         const pc = await publish(streamId, stream);
         window.__mwcast_pc = pc;
@@ -517,16 +544,19 @@ const Stream = () => {
         const res = await fetch(`http://${window.location.hostname}:9997/v3/paths/get/live/${streamId}`);
         if (!res.ok) return;
         const data = await res.json();
-        setHostCamOn(!!(data.source));
+        // Only update from MediaMTX poll if we haven't received a WS host_state yet
+        if (!hostName) {
+          setHostCamOn(!!(data.source));
+        }
       } catch (_) { }
     };
     check();
     const iv = setInterval(check, 3000);
     return () => clearInterval(iv);
-  }, [isHost, streamId]);
+  }, [isHost, streamId, hostName]);
 
   const viewerShowStream = !isHost && !streamEnded && streamData && (hostCamOn || hostScreenSharing);
-  const viewerShowAvatar = !isHost && !streamEnded && streamData && !hostScreenSharing && !hostCamOn;
+  const viewerShowAvatar = !isHost && !streamEnded && !hostScreenSharing && !hostCamOn;
   const viewerShowPip = !isHost && viewerShowStream && hostScreenSharing;
 
   const mainStreamId = hostScreenSharing ? `${streamId}_screen` : streamId;
@@ -636,8 +666,20 @@ const Stream = () => {
                 </>
               ) : (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-white gap-3 bg-slate-950">
-                  <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">Connecting...</span>
+                  {camOn ? (
+                    <>
+                      <div className="w-12 h-12 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+                      <span className="text-[10px] font-black uppercase tracking-[0.2em] text-indigo-400">Connecting...</span>
+                    </>
+                  ) : (
+                    <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900 gap-4">
+                      <div className="w-20 h-20 rounded-full border-4 border-white/10 p-1 bg-slate-800">
+                        <img src={`https://api.dicebear.com/7.x/initials/svg?seed=${streamerName}&backgroundColor=6366f1,ec4899,8b5cf6,06b6d4`}
+                          className="w-full h-full rounded-full object-cover shadow-inner" alt="" />
+                      </div>
+                      <span className="text-white text-base font-black tracking-tight">{hostDisplayName}</span>
+                    </div>
+                  )}
                 </div>
               )}
               {/* Host Badge */}
@@ -720,7 +762,6 @@ const Stream = () => {
                   </div>
                   <div className="text-center">
                     <h3 className="text-white text-xl font-black tracking-tight">{hostName || streamerName}</h3>
-                    <p className="text-indigo-400 text-[10px] font-bold uppercase tracking-widest mt-1">Broadcaster is on air</p>
                   </div>
                 </div>
               ) : (
@@ -811,9 +852,9 @@ const Stream = () => {
                       <div className="bg-slate-950/50 rounded-xl p-3 border border-white/5 flex items-center justify-between group">
                 <div className="min-w-0">
                   <p className="text-[10px] font-black uppercase tracking-widest text-slate-500 mb-1">Server URL</p>
-                  <p className="text-xs text-slate-300 truncate">{`rtmp://${window.location.hostname}:1935/live`}</p>
+                  <p className="text-xs text-slate-300 truncate">{`rtmp://10.0.0.17:1935/live`}</p>
                 </div>
-                <button onClick={() => copyText(`rtmp://${window.location.hostname}:1935/live`, setCopiedServer)}
+                <button onClick={() => copyText(`rtmp://10.0.0.17:1935/live`, setCopiedServer)}
                   className="p-2 text-slate-500 hover:text-white transition-colors">
                   {copiedServer ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
                 </button>
@@ -851,6 +892,13 @@ const Stream = () => {
 
         <div className="flex-1 overflow-y-auto px-5 py-2 space-y-2.5 min-h-0 custom-scrollbar">
           {messages.map((msg, i) => (
+            msg.system ? (
+              <div key={i} className="flex items-center justify-center animate-in fade-in duration-300">
+                <span className="text-[10px] font-bold text-slate-400 dark:text-white/30 italic">
+                  {msg.username} joined the stream
+                </span>
+              </div>
+            ) : (
             <div key={i} className={`flex gap-2 items-baseline p-1.5 rounded-xl transition-all animate-in fade-in duration-300 ${msg.username === streamerName ? 'bg-indigo-500/5 ring-1 ring-indigo-500/10 my-1' : ''}`}>
                <span className={`text-sm font-black tracking-tight shrink-0 ${msg.username === streamerName ? 'text-indigo-600 dark:text-fuchsia-400' : getUserColor(msg.username)}`}>
                  {msg.username}:
@@ -860,6 +908,7 @@ const Stream = () => {
                </span>
                <span className="text-xs font-bold text-slate-500 dark:text-slate-400 ml-auto shrink-0">{formatTimeAgo(msg.time)}</span>
             </div>
+            )
           ))}
           <div ref={chatEndRef} />
         </div>
