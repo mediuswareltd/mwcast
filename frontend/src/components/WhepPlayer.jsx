@@ -134,16 +134,7 @@ const WhepPlayer = ({ streamId, className = '', stopped = false, controls = true
 
       {controls && (
         <>
-          <div className="absolute bottom-12 left-0 right-0 px-4 pointer-events-none">
-            <div className="h-1 bg-white/20 rounded-full overflow-hidden">
-              <div className="h-full bg-red-500 w-full" />
-            </div>
-          </div>
-
-          <div className={`absolute bottom-0 left-0 right-0 px-4 py-3 flex items-center gap-3 bg-gradient-to-t from-black/80 to-transparent transition-opacity duration-300 z-30 pointer-events-auto ${showControls ? 'opacity-100' : 'opacity-0'}`}>
-            <span className="text-[10px] font-black uppercase tracking-widest text-red-400 flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse" /> Live
-            </span>
+          <div className={`absolute bottom-0 left-0 right-0 px-4 py-4 flex items-center gap-3 bg-gradient-to-t from-black/40 to-transparent transition-opacity duration-300 z-30 pointer-events-auto ${showControls ? 'opacity-100' : 'opacity-0'}`}>
             <div className="flex-1" />
             <button onClick={toggleMute} className="text-white hover:text-indigo-400 transition-colors p-1">
               {muted ? <VolumeX size={18} /> : <Volume2 size={18} />}
