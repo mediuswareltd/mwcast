@@ -10,6 +10,8 @@ pub enum AppError {
     BadRequest(String),
     ValidationErrors(Vec<crate::response::ValidationError>),
     InternalError(String),
+    Unauthorized(String),
+    Conflict(String),
 }
 
 impl fmt::Display for AppError {
@@ -20,6 +22,8 @@ impl fmt::Display for AppError {
             AppError::BadRequest(msg) => write!(f, "{}", msg),
             AppError::ValidationErrors(_) => write!(f, "Validation failed"),
             AppError::InternalError(msg) => write!(f, "{}", msg),
+            AppError::Unauthorized(msg) => write!(f, "{}", msg),
+            AppError::Conflict(msg) => write!(f, "{}", msg),
         }
     }
 }
@@ -32,6 +36,8 @@ impl ResponseError for AppError {
             AppError::BadRequest(_) => StatusCode::BAD_REQUEST,
             AppError::ValidationErrors(_) => StatusCode::UNPROCESSABLE_ENTITY,
             AppError::InternalError(_) => StatusCode::INTERNAL_SERVER_ERROR,
+            AppError::Unauthorized(_) => StatusCode::UNAUTHORIZED,
+            AppError::Conflict(_) => StatusCode::CONFLICT,
         }
     }
 
@@ -49,6 +55,8 @@ impl ResponseError for AppError {
                     AppError::NotFound(_) => "not_found",
                     AppError::BadRequest(_) => "bad_request",
                     AppError::InternalError(_) => "internal_error",
+                    AppError::Unauthorized(_) => "unauthorized",
+                    AppError::Conflict(_) => "conflict",
                     AppError::ValidationErrors(_) => unreachable!(),
                 };
 
@@ -72,4 +80,3 @@ impl From<sqlx::Error> for AppError {
         }
     }
 }
-

@@ -3,6 +3,7 @@ import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { MessageCircle, Send, Heart, Shield, Copy, Check, Mic, MicOff, Camera, CameraOff, Monitor, MonitorOff, Square, Radio, Minimize2, Settings, X } from 'lucide-react';
 import JoinStreamModal from '../components/JoinStreamModal';
 import WhepPlayer from '../components/WhepPlayer';
+import { useAuth } from '../context/AuthContext';
 import { API_BASE_URL, WS_CHAT_URL, HLS_URL } from '../config';
 import { useWhipPublisher } from '../hooks/useWhipPublisher';
 
@@ -102,7 +103,8 @@ const Stream = () => {
   const chatEndRef = useRef(null);
   const hlsPollRef = useRef(null);
 
-  const hostDisplayName = window.__mwcast_username || streamerName;
+  const { user, authFetch } = useAuth();
+  const hostDisplayName = user?.display_name || window.__mwcast_username || streamerName;
 
   // Load chat history
   useEffect(() => {
@@ -139,8 +141,7 @@ const Stream = () => {
         micOnRef.current = audioEnabled;
         camOnRef.current = camAvailable ? videoEnabled : false;
         if (localVideoRef.current) localVideoRef.current.srcObject = localMedia.current;
-        // Republish from Stream.jsx's own WHIP instance — GoLiveModal's connection
-        // is about to die when the modal unmounts/closes.
+        // Republish from Stream.jsx's own WHIP instance
         await republishRef.current({ cam: camAvailable ? videoEnabled : false, screen: false });
       } else {
         // Page was refreshed — re-acquire media and republish
@@ -223,42 +224,37 @@ const Stream = () => {
       const socket = new WebSocket(`${WS_CHAT_URL}/${streamId}?username=${encodeURIComponent(guestName)}`);
       wsRef.current = socket;
       socket.onopen = () => {
-        // Host: immediately broadcast current state so any joining viewer gets it
         if (isHost) {
           socket.send(JSON.stringify({
             type: 'host_state',
             camOn: camOnRef.current,
             screenSharing: screenSharingRef.current,
-            hostName: window.__mwcast_username || streamerName,
+            hostName: hostDisplayName,
           }));
         } else {
-          // Guest: request current host state on connect
           socket.send(JSON.stringify({ type: 'request_host_state' }));
         }
       };
       socket.onmessage = (event) => {
         if (cancelled) return;
         const data = JSON.parse(event.data);
-        // Host state broadcast — not a chat message
         if (data.type === 'host_state') {
           setHostCamOn(data.camOn ?? true);
           setHostScreenSharing(data.screenSharing ?? false);
           if (data.hostName) setHostName(data.hostName);
           return;
         }
-        // Guest is requesting host state — host responds
         if (data.type === 'request_host_state' && isHost) {
           if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({
               type: 'host_state',
               camOn: camOnRef.current,
               screenSharing: screenSharingRef.current,
-              hostName: window.__mwcast_username || streamerName,
+              hostName: hostDisplayName,
             }));
           }
           return;
         }
-        // System event (join/leave)
         if (data.type === 'system') {
           setMessages(prev => [...prev, {
             system: true,
@@ -268,15 +264,15 @@ const Stream = () => {
           }].slice(-100));
           return;
         }
-          setMessages(prev => {
-            const updated = [...prev, {
-              username: data.username,
-              message: data.message,
-              time: Date.now()
-            }].slice(-100);
-            sessionStorage.setItem(`mwcast_chat_${streamId}`, JSON.stringify(updated));
-            return updated;
-          });
+        setMessages(prev => {
+          const updated = [...prev, {
+            username: data.username,
+            message: data.message,
+            time: Date.now()
+          }].slice(-100);
+          sessionStorage.setItem(`mwcast_chat_${streamId}`, JSON.stringify(updated));
+          return updated;
+        });
       };
       socket.onclose = () => {
         if (cancelled) return;
@@ -297,7 +293,7 @@ const Stream = () => {
       clearTimeout(reconnectTimer);
       if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     };
-  }, [streamId, guestName]);
+  }, [streamId, guestName, isHost, hostDisplayName]);
 
   // Ensure camera video element always has srcObject when it's visible
   useLayoutEffect(() => {
@@ -351,7 +347,6 @@ const Stream = () => {
       } catch (_) { }
     }
   };
-  // Keep ref in sync so the init effect can call it before render
   republishRef.current = republish;
 
   // ── HOST controls ────────────────────────────────────────────────────────────
@@ -359,8 +354,6 @@ const Stream = () => {
     const next = !micOn;
     setMicOn(next);
     micOnRef.current = next;
-    // Just toggle the track — the existing WHIP peer connection handles it.
-    // Republishing would tear down and restart the stream unnecessarily.
     const audioTrack = localMedia.current?.getAudioTracks()[0];
     if (audioTrack) audioTrack.enabled = next;
   };
@@ -372,10 +365,8 @@ const Stream = () => {
     camOnRef.current = next;
     if (!screenSharing) {
       await republish({ cam: next, screen: false });
-      // Re-attach stream to self-view (needed after republish creates new MediaStream)
       if (localVideoRef.current) localVideoRef.current.srcObject = localMedia.current;
     } else {
-      // During screen share — update the camera PiP stream
       if (next) {
         const videoTrack = localMedia.current?.getVideoTracks()[0] ?? null;
         if (videoTrack) {
@@ -398,9 +389,9 @@ const Stream = () => {
       setScreenSharing(false);
       screenSharingRef.current = false;
       if (screenVideoRef.current) { screenVideoRef.current.srcObject = null; }
-      stopPublisher(); // stops the _screen WHIP connection
+      stopPublisher();
       stopCamPublisher();
-      await republish({ cam: camOnRef.current, screen: false }); // republish camera to main path
+      await republish({ cam: camOnRef.current, screen: false });
       if (localVideoRef.current) localVideoRef.current.srcObject = localMedia.current;
       broadcastHostState({ camOn: camOnRef.current, screenSharing: false });
     } else {
@@ -413,16 +404,11 @@ const Stream = () => {
         setPipStyle({ bottom: 12, right: 12 });
         setPipMinimized(false);
         if (pipRef.current) pipRef.current.srcObject = localMedia.current;
-        // Show screen preview in host view
         if (screenVideoRef.current) {
           screenVideoRef.current.srcObject = new MediaStream([screenTrack]);
           screenVideoRef.current.play().catch(() => { });
         }
-
-        // Publish screen as separate stream path
         await republish({ cam: false, screen: true });
-
-        // Publish camera as separate PiP stream (viewers can see it)
         if (camOn) {
           const videoTrack = localMedia.current?.getVideoTracks()[0] ?? null;
           const audioTrack = localMedia.current?.getAudioTracks()[0] ?? null;
@@ -432,9 +418,7 @@ const Stream = () => {
             await publishCam(`${streamId}_cam`, camStream);
           }
         }
-
         broadcastHostState({ camOn: camOnRef.current, screenSharing: true });
-
         screenTrack.addEventListener('ended', async () => {
           screenTrackRef.current = null;
           setScreenSharing(false);
@@ -461,7 +445,7 @@ const Stream = () => {
     setIsStopping(true);
     stopPublisher();
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/streams/stop`, {
+      const res = await authFetch(`${API_BASE_URL}/api/v1/streams/stop`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stream_id: streamId }),
       });
@@ -544,7 +528,7 @@ const Stream = () => {
     if (isHost || !streamId) return;
     const check = async () => {
       try {
-        const res = await fetch(`http://${window.location.hostname}:9997/v3/paths/get/live/${streamId}`);
+        const res = await fetch(MEDIAMTX_PATH_URL(streamId));
         if (!res.ok) return;
         const data = await res.json();
         // Only update from MediaMTX poll if we haven't received a WS host_state yet

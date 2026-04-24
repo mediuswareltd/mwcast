@@ -7,6 +7,7 @@ use validator::Validate;
 pub struct Stream {
     pub id: Uuid,
     pub host_name: String,
+    pub host_id: Option<Uuid>,   // FK to users (nullable for pre-auth legacy rows)
     pub title: String,
     pub status: String,
     pub created_at: DateTime<Utc>,
@@ -16,9 +17,6 @@ pub struct Stream {
 #[derive(Debug, Serialize, Deserialize, Validate)]
 #[serde(default)]
 pub struct CreateStreamRequest {
-    #[validate(length(min = 1, message = "host_name is required"))]
-    pub host_name: String,
-
     #[validate(length(min = 1, message = "title is required"))]
     pub title: String,
 }
@@ -26,7 +24,6 @@ pub struct CreateStreamRequest {
 impl Default for CreateStreamRequest {
     fn default() -> Self {
         Self {
-            host_name: String::new(),
             title: String::new(),
         }
     }
@@ -76,6 +73,7 @@ pub struct ViewerJoinResponse {
 pub struct StreamMetadata {
     pub title: String,
     pub host_name: String,
+    pub host_id: Option<String>,
     pub status: String,
 }
 
@@ -83,6 +81,7 @@ pub struct StreamMetadata {
 pub struct StreamListItem {
     pub id: String,
     pub host_name: String,
+    pub host_id: Option<String>,
     pub title: String,
     pub status: String,
     pub created_at: DateTime<Utc>,

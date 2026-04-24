@@ -1,29 +1,31 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
-import { Video, X, Mic, MicOff, Camera, CameraOff, Play, Loader, Radio } from 'lucide-react';
+import { Video, X, Mic, MicOff, Camera, CameraOff, Play, Loader, Radio, Lock, User, ArrowRight } from 'lucide-react';
 import { API_BASE_URL, HLS_URL } from '../config';
 import { useWhipPublisher } from '../hooks/useWhipPublisher';
+import { useAuth } from '../context/AuthContext';
 
 const slugify = (s) => s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
 export default function GoLiveModal({ isOpen, onClose }) {
   const navigate = useNavigate();
   const { publish, stop: stopWhip } = useWhipPublisher();
+  const { user, authFetch, openAuthModal } = useAuth();
 
-  const [step, setStep]         = useState('setup');
-  const [title, setTitle]       = useState('');
-  const [username, setUsername] = useState('');
-  const [error, setError]       = useState(null);
+  const [step, setStep] = useState('setup');
+  const [title, setTitle] = useState('');
+  const [error, setError] = useState(null);
   const [streamId, setStreamId] = useState(null);
-  const [micOn, setMicOn]       = useState(true);
-  const [camOn, setCamOn]       = useState(true);
-  const [hasCam, setHasCam]     = useState(true);
+  const [micOn, setMicOn] = useState(true);
+  const [camOn, setCamOn] = useState(true);
+  const [hasCam, setHasCam] = useState(true);
   const [mediaReady, setMediaReady] = useState(false);
 
   const videoRef = useRef(null);
   const mediaRef = useRef(null);
 
-  // Stable video ref callback — won't remount the element on re-renders
+  // Stable video ref callback
   const setVideoRef = useCallback((el) => {
     videoRef.current = el;
     if (el && mediaRef.current) el.srcObject = mediaRef.current;
@@ -32,18 +34,17 @@ export default function GoLiveModal({ isOpen, onClose }) {
   // Reset on open
   useEffect(() => {
     if (isOpen) {
-      setStep('setup'); setTitle(''); setUsername('');
+      setStep('setup'); setTitle('');
       setError(null); setStreamId(null);
       setMicOn(true); setCamOn(true); setHasCam(true); setMediaReady(false);
     } else if (step !== 'ready') {
-      // Only stop tracks if user cancelled — not when navigating into the stream
       stopMediaTracks();
     }
   }, [isOpen]);
 
   // Start camera preview
   useEffect(() => {
-    if (!isOpen || step !== 'setup') return;
+    if (!isOpen || step !== 'setup' || !user) return;
     if (!navigator.mediaDevices?.getUserMedia) return;
     navigator.mediaDevices.getUserMedia({ video: true, audio: true })
       .then(s => {
@@ -59,7 +60,7 @@ export default function GoLiveModal({ isOpen, onClose }) {
           .then(s => { mediaRef.current = s; setMediaReady(true); })
           .catch(() => { setMediaReady(true); });
       });
-  }, [isOpen, step]);
+  }, [isOpen, step, user]);
 
   const stopMediaTracks = () => {
     mediaRef.current?.getTracks().forEach(t => t.stop());
@@ -75,7 +76,6 @@ export default function GoLiveModal({ isOpen, onClose }) {
     const next = !camOn;
     mediaRef.current?.getVideoTracks().forEach(t => { t.enabled = next; });
     setCamOn(next);
-    // Re-attach stream to video element when turning cam back on
     if (next && videoRef.current && mediaRef.current) {
       videoRef.current.srcObject = mediaRef.current;
     }
@@ -84,21 +84,24 @@ export default function GoLiveModal({ isOpen, onClose }) {
   const pollHlsReady = (id) => new Promise((resolve, reject) => {
     const timeout = setTimeout(() => { clearInterval(iv); reject(new Error('HLS stream timed out. Check media server.')); }, 30000);
     const iv = setInterval(async () => {
-      try { const r = await fetch(HLS_URL(id)); if (r.ok) { clearInterval(iv); clearTimeout(timeout); resolve(); } } catch (_) {}
+      try { const r = await fetch(HLS_URL(id)); if (r.ok) { clearInterval(iv); clearTimeout(timeout); resolve(); } } catch (_) { }
     }, 2000);
   });
 
   const handleGoLive = async () => {
-    if (!title.trim() || !username.trim()) { setError('Please enter a title and display name.'); return; }
+    if (!title.trim()) { setError('Please enter a title for your stream.'); return; }
     setError(null);
     setStep('connecting');
     try {
-      const res = await fetch(`${API_BASE_URL}/api/v1/streams/start`, {
+      const res = await authFetch(`${API_BASE_URL}/api/v1/streams/start`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ host_name: username, title }),
+        body: JSON.stringify({ title }),
       });
-      if (!res.ok) throw new Error('Failed to create stream');
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error?.message || 'Failed to create stream');
+      }
       const { data } = await res.json();
       const id = data.stream_id;
       setStreamId(id);
@@ -106,10 +109,10 @@ export default function GoLiveModal({ isOpen, onClose }) {
       const publishStream = mediaRef.current ?? null;
       if (publishStream) {
         const pc = await publish(id, publishStream);
-        window.__mwcast_stream   = publishStream;
-        window.__mwcast_username = username;
-        window.__mwcast_has_cam  = hasCam;
-        window.__mwcast_pc       = pc;
+        window.__mwcast_stream = publishStream;
+        window.__mwcast_username = user.display_name;
+        window.__mwcast_has_cam = hasCam;
+        window.__mwcast_pc = pc;
       }
 
       await pollHlsReady(id);
@@ -122,14 +125,14 @@ export default function GoLiveModal({ isOpen, onClose }) {
   };
 
   const handleEnterStream = () => {
-    navigate(`/s/${slugify(username)}?host=true&id=${streamId}&title=${encodeURIComponent(title)}`);
+    navigate(`/s/${slugify(user.display_name)}?host=true&id=${streamId}&title=${encodeURIComponent(title)}`);
     onClose();
   };
 
   if (!isOpen) return null;
 
-  return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-in fade-in duration-300">
+  return createPortal(
+    <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-slate-950/90 backdrop-blur-md animate-in fade-in duration-300 overflow-y-auto">
       <div className="bg-white dark:bg-slate-900 w-full max-w-lg rounded-3xl overflow-hidden shadow-2xl border border-slate-200 dark:border-white/10 animate-in zoom-in-95 duration-300">
 
         {/* Header */}
@@ -154,91 +157,124 @@ export default function GoLiveModal({ isOpen, onClose }) {
         </div>
 
         <div className="p-6 space-y-4">
-          {step === 'setup' && (
-            <form onSubmit={e => { e.preventDefault(); handleGoLive(); }} className="space-y-4">
-              {error && <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded-2xl text-xs font-bold">{error}</div>}
+          {!user ? (
+            <div className="py-12 flex flex-col items-center text-center gap-6">
+              <div className="w-16 h-16 rounded-3xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
+                <Lock className="text-amber-500" size={28} />
+              </div>
+              <div>
+                <h3 className="font-black text-slate-800 dark:text-white uppercase tracking-tight">Authentication Required</h3>
+                <p className="text-xs text-slate-500 font-medium mt-1 max-w-[280px]">
+                  Sign in to your account to start broadcasting live on MW Cast.
+                </p>
+              </div>
 
-              {/* Camera preview — video always in DOM, hidden via CSS to avoid remount blink */}
-              <div className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden">
-                {/* Always render video — just hide it when not needed */}
-                <video
-                  ref={setVideoRef}
-                  autoPlay muted playsInline disablePictureInPicture
-                  className={`w-full h-full object-cover mirror ${camOn && mediaReady && hasCam ? '' : 'hidden'}`}
-                />
-                {/* Placeholder shown when video is hidden */}
-                {(!camOn || !mediaReady || !hasCam) && (
-                  <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
-                    <Camera size={32} className="text-slate-600" />
-                    <p className="text-slate-500 text-xs font-medium">
-                      {!mediaReady ? 'Requesting camera...' : !hasCam ? 'No camera detected' : 'Camera off'}
-                    </p>
+              <button
+                onClick={openAuthModal}
+                className="w-full flex items-center justify-between p-4 bg-indigo-600 hover:bg-indigo-500 text-white rounded-2xl transition-all active:scale-95 group shadow-xl shadow-indigo-600/20"
+              >
+                <div className="flex items-center gap-4">
+                  <div className="bg-white/20 p-2 rounded-xl">
+                    <User size={24} className="text-white" />
                   </div>
-                )}
-                {/* Mic / Cam toggles */}
-                <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
-                  <button type="button" onClick={toggleMic}
-                    className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${micOn ? 'bg-white/10 border-white/20 text-white' : 'bg-red-600 border-red-600 text-white'}`}>
-                    {micOn ? <Mic size={16} /> : <MicOff size={16} />}
-                  </button>
-                  <button type="button" onClick={hasCam ? toggleCam : undefined} disabled={!hasCam}
-                    title={!hasCam ? 'No camera detected' : camOn ? 'Turn camera off' : 'Turn camera on'}
-                    className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${!hasCam ? 'opacity-40 cursor-not-allowed bg-slate-700 border-slate-600 text-slate-400' : camOn ? 'bg-white/10 border-white/20 text-white' : 'bg-red-600 border-red-600 text-white'}`}>
-                    {camOn ? <Camera size={16} /> : <CameraOff size={16} />}
-                  </button>
+                  <span className="text-sm font-black uppercase tracking-widest text-white">Log In to Continue</span>
                 </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Stream Title</label>
-                  <input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Morning Session"
-                    className="w-full bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl py-3 px-4 text-sm font-medium dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all" />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Display Name</label>
-                  <input value={username} onChange={e => setUsername(e.target.value)} placeholder="e.g. Subal Roy"
-                    className="w-full bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-white/10 rounded-2xl py-3 px-4 text-sm font-medium dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all" />
-                </div>
-              </div>
-
-              <button type="submit"
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-600/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2">
-                <Play size={14} fill="currentColor" /> Go Live
-              </button>
-            </form>
-          )}
-
-          {step === 'connecting' && (
-            <div className="py-10 flex flex-col items-center gap-4">
-              <div className="w-16 h-16 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
-                <Loader size={28} className="text-indigo-400 animate-spin" />
-              </div>
-              <p className="font-black text-slate-800 dark:text-white text-sm uppercase tracking-widest">Setting up stream...</p>
-            </div>
-          )}
-
-          {step === 'ready' && (
-            <div className="py-8 flex flex-col items-center gap-5">
-              <div className="relative">
-                <div className="w-16 h-16 rounded-full bg-green-500/10 border-2 border-green-500/30 flex items-center justify-center">
-                  <Radio size={28} className="text-green-500" />
-                </div>
-                <div className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] font-black px-2 py-0.5 rounded-md animate-pulse">Live</div>
-              </div>
-              <div className="text-center">
-                <p className="font-black text-slate-800 dark:text-white text-lg">You're Live!</p>
-                <p className="text-xs text-slate-400 font-medium mt-1">Viewers can join now</p>
-              </div>
-              <button onClick={handleEnterStream}
-                className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-600/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2">
-                <Play size={14} fill="currentColor" /> Enter Stream
+                <ArrowRight size={18} className="text-white group-hover:translate-x-1 transition-transform" />
               </button>
             </div>
+          ) : (
+            <>
+              {step === 'setup' && (
+                <form onSubmit={e => { e.preventDefault(); handleGoLive(); }} className="space-y-4">
+                  {error && <div className="bg-red-500/10 border border-red-500/20 text-red-500 p-3 rounded-2xl text-xs font-bold text-center">{error}</div>}
+
+                  <div className="relative aspect-video bg-slate-900 rounded-2xl overflow-hidden shadow-inner">
+                    <video
+                      ref={setVideoRef}
+                      autoPlay muted playsInline disablePictureInPicture
+                      className={`w-full h-full object-cover mirror ${camOn && mediaReady && hasCam ? '' : 'hidden'}`}
+                    />
+                    {(!camOn || !mediaReady || !hasCam) && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2">
+                        <Camera size={32} className="text-slate-600" />
+                        <p className="text-slate-500 text-xs font-medium">
+                          {!mediaReady ? 'Requesting camera...' : !hasCam ? 'No camera detected' : 'Camera off'}
+                        </p>
+                      </div>
+                    )}
+                    <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
+                      <button type="button" onClick={toggleMic}
+                        className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${micOn ? 'bg-white/10 border-white/20 text-white' : 'bg-red-600 border-red-600 text-white shadow-lg shadow-red-600/20'}`}>
+                        {micOn ? <Mic size={16} /> : <MicOff size={16} />}
+                      </button>
+                      <button type="button" onClick={hasCam ? toggleCam : undefined} disabled={!hasCam}
+                        className={`p-2.5 rounded-xl backdrop-blur-md border transition-all ${!hasCam ? 'opacity-40 cursor-not-allowed bg-slate-700 border-slate-600 text-slate-400' : camOn ? 'bg-white/10 border-white/20 text-white' : 'bg-red-600 border-red-600 text-white shadow-lg shadow-red-600/20'}`}>
+                        {camOn ? <Camera size={16} /> : <CameraOff size={16} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="bg-slate-50 dark:bg-white/5 border border-slate-200 dark:border-white/10 rounded-2xl p-4 flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-indigo-600/10 flex items-center justify-center">
+                        <User size={18} className="text-indigo-600 dark:text-indigo-400" />
+                      </div>
+                      <div>
+                        <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Broadcasting as</p>
+                        <p className="text-sm font-bold dark:text-white">{user.display_name}</p>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Stream Title</label>
+                      <input value={title} onChange={e => setTitle(e.target.value)} placeholder="What are you streaming today?"
+                        className="w-full bg-slate-50 dark:bg-slate-950/50 border border-slate-200 dark:border-white/10 rounded-2xl py-4 px-5 text-sm font-medium dark:text-white focus:outline-none focus:ring-2 focus:ring-indigo-500/50 transition-all shadow-sm" />
+                    </div>
+                  </div>
+
+                  <button type="submit"
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-600/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2 mt-2">
+                    <Play size={14} fill="currentColor" /> Start Broadcast
+                  </button>
+                </form>
+              )}
+
+              {step === 'connecting' && (
+                <div className="py-12 flex flex-col items-center gap-4">
+                  <div className="w-16 h-16 rounded-full bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
+                    <Loader size={28} className="text-indigo-400 animate-spin" />
+                  </div>
+                  <div className="text-center">
+                    <p className="font-black text-slate-800 dark:text-white text-sm uppercase tracking-widest">Warming up...</p>
+                    <p className="text-[10px] text-slate-500 font-medium mt-1">Connecting to low-latency edge servers</p>
+                  </div>
+                </div>
+              )}
+
+              {step === 'ready' && (
+                <div className="py-8 flex flex-col items-center gap-6">
+                  <div className="relative">
+                    <div className="w-20 h-20 rounded-[2rem] bg-green-500/10 border-2 border-green-500/30 flex items-center justify-center rotate-3">
+                      <Radio size={32} className="text-green-500 -rotate-3" />
+                    </div>
+                    <div className="absolute -top-2 -right-2 bg-red-600 text-white text-[10px] font-black px-2.5 py-1 rounded-lg animate-pulse shadow-lg shadow-red-600/20">LIVE</div>
+                  </div>
+                  <div className="text-center">
+                    <h3 className="font-black text-slate-800 dark:text-white text-xl tracking-tight">Signal Acquired!</h3>
+                    <p className="text-xs text-slate-500 font-medium mt-1">Your broadcast is now being distributed globally</p>
+                  </div>
+                  <button onClick={handleEnterStream}
+                    className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-black py-4 rounded-2xl shadow-xl shadow-indigo-600/20 hover:scale-[1.02] active:scale-95 transition-all uppercase tracking-widest text-xs flex items-center justify-center gap-2">
+                    <Play size={14} fill="currentColor" /> Enter Studio
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
 
