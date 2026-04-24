@@ -22,7 +22,7 @@ const Home = () => {
         </h1>
         
         <p className="text-slate-600 dark:text-slate-400 text-lg md:text-xl font-medium leading-relaxed max-w-xl mx-auto">
-          Start a live stream directly from your browser in seconds. No complex software, no login required. Just you and your audience.
+          Start a live stream directly from your browser in seconds. Secure authentication, zero complex software. Just you and your audience.
         </p>
 
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-8">
@@ -47,9 +47,9 @@ const Home = () => {
       {/* Feature Pills */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-4xl pt-12">
         {[
-          { title: 'No Install', desc: 'Runs entirely in your web browser using WebRTC.' },
-          { title: 'Zero Login', desc: 'Jump right in and start sharing immediately.' },
-          { title: 'Real-time Chat', desc: 'Interact with your viewers with zero latency.' }
+          { title: 'No Install', desc: 'Zero setup required. Broadcast directly from your browser.' },
+          { title: 'Secure Auth', desc: 'Protect your channel with Google or email login.' },
+          { title: 'Ultra Low Latency', desc: 'Engineered for real-time interaction with no delay.' }
         ].map((f, i) => (
           <div key={i} className="p-6 rounded-3xl bg-white dark:bg-white/5 border border-slate-200 dark:border-white/5 shadow-sm space-y-2">
             <h3 className="font-bold text-slate-800 dark:text-slate-100">{f.title}</h3>

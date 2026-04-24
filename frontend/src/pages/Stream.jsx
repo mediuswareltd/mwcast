@@ -528,7 +528,7 @@ const Stream = () => {
     if (isHost || !streamId) return;
     const check = async () => {
       try {
-        const res = await fetch(`http://${window.location.hostname}:9997/v3/paths/get/live/${streamId}`);
+        const res = await fetch(MEDIAMTX_PATH_URL(streamId));
         if (!res.ok) return;
         const data = await res.json();
         // Only update from MediaMTX poll if we haven't received a WS host_state yet
