@@ -7,6 +7,7 @@ use uuid::Uuid;
 use crate::config::Config;
 use crate::error::AppError;
 use crate::extractors::ValidatedJson;
+use crate::handlers::auth::extract_claims_from_request;
 use crate::kafka;
 use crate::models::{CreateStreamRequest, StreamListItem, StreamMetadata, StreamResponse, StopStreamRequest, StopStreamResponse, ViewerJoinResponse};
 use crate::repository::StreamRepository;
@@ -21,6 +22,7 @@ pub async fn list(
         .map(|s| StreamListItem {
             id: s.id.to_string(),
             host_name: s.host_name,
+            host_id: s.host_id.map(|id| id.to_string()),
             title: s.title,
             status: s.status,
             created_at: s.created_at,
@@ -30,12 +32,18 @@ pub async fn list(
 }
 
 pub async fn start(
+    req: HttpRequest,
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
     admin: web::Data<AdminClient<DefaultClientContext>>,
-    ValidatedJson(req): ValidatedJson<CreateStreamRequest>,
+    ValidatedJson(body): ValidatedJson<CreateStreamRequest>,
 ) -> Result<impl Responder, AppError> {
-    let stream = StreamRepository::create(&pool, req.host_name, req.title).await?;
+    // Require authentication
+    let claims = extract_claims_from_request(&req, &config.jwt_secret)?;
+    let host_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Unauthorized("Invalid user ID in token".to_string()))?;
+
+    let stream = StreamRepository::create(&pool, host_id, claims.display_name, body.title).await?;
 
     kafka::create_topic(&admin, &stream.id.to_string()).await;
 
@@ -48,16 +56,28 @@ pub async fn start(
 }
 
 pub async fn stop(
+    req: HttpRequest,
     pool: web::Data<PgPool>,
+    config: web::Data<Config>,
     admin: web::Data<AdminClient<DefaultClientContext>>,
-    ValidatedJson(req): ValidatedJson<StopStreamRequest>,
+    ValidatedJson(body): ValidatedJson<StopStreamRequest>,
 ) -> Result<impl Responder, AppError> {
-    let id = Uuid::parse_str(&req.stream_id)
+    // Require authentication
+    let claims = extract_claims_from_request(&req, &config.jwt_secret)?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Unauthorized("Invalid user ID in token".to_string()))?;
+
+    let id = Uuid::parse_str(&body.stream_id)
         .map_err(|_| AppError::BadRequest("Invalid stream_id format".to_string()))?;
 
     let stream = StreamRepository::get_by_id(&pool, id)
         .await?
         .ok_or_else(|| AppError::NotFound("Stream not found".to_string()))?;
+
+    // Ensure only the stream's host can stop it
+    if stream.host_id != Some(user_id) {
+        return Err(AppError::Unauthorized("You are not the host of this stream".to_string()));
+    }
 
     if stream.status != "live" {
         return Err(AppError::BadRequest(format!(
@@ -67,7 +87,6 @@ pub async fn stop(
     }
 
     StreamRepository::update_status(&pool, id, "stopped").await?;
-
     kafka::delete_topic(&admin, &id.to_string()).await;
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(StopStreamResponse {
@@ -86,6 +105,7 @@ pub async fn metadata(
     Ok(HttpResponse::Ok().json(ApiResponse::success(StreamMetadata {
         title: stream.title,
         host_name: stream.host_name,
+        host_id: stream.host_id.map(|id| id.to_string()),
         status: stream.status,
     })))
 }

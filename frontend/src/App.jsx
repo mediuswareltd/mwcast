@@ -4,9 +4,16 @@ import MainLayout from './layouts/MainLayout';
 import Home from './pages/Home';
 import Stream from './pages/Stream';
 import Explore from './pages/Explore';
+import AuthCallback from './pages/AuthCallback';
+
+import { useAuth } from './context/AuthContext';
+import AuthModal from './components/AuthModal';
+import Placeholder from './components/Placeholder';
+import NotFound from './pages/NotFound';
 
 function App() {
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const { isAuthModalOpen, closeAuthModal } = useAuth();
 
   useEffect(() => {
     if (isDarkMode) {
@@ -25,12 +32,14 @@ function App() {
           <Route path="/" element={<Home />} />
           <Route path="/s/:username" element={<Stream />} />
           <Route path="/explore" element={<Explore />} />
-          <Route path="/following" element={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 font-bold text-xl bg-slate-100 dark:bg-slate-900/40 rounded-3xl border border-white/5 mx-auto max-w-4xl animate-pulse">Your following list will appear here</div>} />
-          <Route path="/browse" element={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 font-bold text-xl bg-slate-100 dark:bg-slate-900/40 rounded-3xl border border-white/5 mx-auto max-w-4xl animate-pulse">Browse all categories</div>} />
-          <Route path="/settings" element={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 font-bold text-xl bg-slate-100 dark:bg-slate-900/40 rounded-3xl border border-white/5 mx-auto max-w-4xl animate-pulse">User Settings</div>} />
-          <Route path="*" element={<div className="flex items-center justify-center min-h-[50vh] text-slate-500 font-bold text-xl bg-slate-100 dark:bg-slate-900/40 rounded-3xl border border-white/5 mx-auto max-w-4xl">404 - Page not found</div>} />
+          <Route path="/auth/callback" element={<AuthCallback />} />
+          <Route path="/following" element={<Placeholder title="Following" description="Your favorite creators are just a heartbeat away. Feature coming soon." />} />
+          <Route path="/browse" element={<Placeholder title="Browse" description="Discovery is an art. Explore categories and tags in the next update." />} />
+          <Route path="/settings" element={<Placeholder title="Settings" description="Customize your experience. Profile and account controls are in development." />} />
+          <Route path="*" element={<NotFound />} />
         </Routes>
       </MainLayout>
+      <AuthModal isOpen={isAuthModalOpen} onClose={closeAuthModal} />
     </Router>
   );
 }

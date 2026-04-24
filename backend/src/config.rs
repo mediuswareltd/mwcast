@@ -9,6 +9,10 @@ pub struct Config {
     pub api_base_url: String,
     pub media_server_url: String,
     pub kafka_brokers: String,
+    pub jwt_secret: String,
+    pub google_client_id: String,
+    pub google_client_secret: String,
+    pub frontend_url: String,
 }
 
 impl Config {
@@ -30,8 +34,14 @@ impl Config {
                 .unwrap_or_else(|_| "rtmp://localhost:1935".to_string()),
             kafka_brokers: env::var("KAFKA_BROKERS")
                 .unwrap_or_else(|_| "localhost:9092".to_string()),
+            jwt_secret: env::var("JWT_SECRET")
+                .unwrap_or_else(|_| "changeme_jwt_secret".to_string()),
+            google_client_id: env::var("GOOGLE_CLIENT_ID")
+                .unwrap_or_default(),
+            google_client_secret: env::var("GOOGLE_CLIENT_SECRET")
+                .unwrap_or_default(),
+            frontend_url: env::var("FRONTEND_URL")
+                .unwrap_or_else(|_| "https://localhost".to_string()),
         }
     }
 }
-
-
