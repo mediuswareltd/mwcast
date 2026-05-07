@@ -2,7 +2,7 @@
 
 **MW Cast** is a high-performance live media streaming platform. It features a complete architecture for broadcasting, real-time video streaming, and live chat, consisting of a modern React frontend, a robust Rust backend API, and scalable media and messaging infrastructure.
 
-## 🚀 Architecture & Tech Stack
+##  Architecture & Tech Stack
 
 MW Cast is structured as a full-stack application with microservices orchestrated via Docker Compose:
 
@@ -29,7 +29,7 @@ The necessary services for data persistence, live media, and real-time messaging
 
 ---
 
-## 📁 Project Structure
+##  Project Structure
 
 ```text
 mwcast/
@@ -60,7 +60,7 @@ Before you begin, ensure you have the following installed on your system:
 
 ---
 
-## 🏃 Getting Started
+##  Getting Started
 
 ### 1. Setup Environment Variables
 Clone the `.env.example` file to create your own local `.env` configuration.
@@ -91,7 +91,7 @@ The React app will typically be available at `http://localhost:5173` (or as conf
 
 ---
 
-## 📡 Media Streaming Details
+##  Media Streaming Details
 MW Cast heavily leverages MediaMTX for video data routing. 
 
 - **RTMP Ingestion:** `rtmp://localhost:1935` (Broadcasters push streams here)
