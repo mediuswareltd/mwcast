@@ -2,7 +2,7 @@ mod logger;
 
 use actix_cors::Cors;
 use actix_web::{web, App, HttpServer};
-use backend::{config::Config, db, routes};
+use backend::{chat, config::Config, db, kafka, routes};
 use tracing::info;
 
 #[actix_web::main]
@@ -22,11 +22,19 @@ async fn main() -> std::io::Result<()> {
     );
 
     let config_data = web::Data::new(config.clone());
+    let chat_rooms = web::Data::new(chat::new_chat_rooms());
+    let kafka_producer = web::Data::new(kafka::create_producer(&config.kafka_brokers));
+    let kafka_admin = web::Data::new(kafka::create_admin(&config.kafka_brokers));
+    let kafka_brokers = web::Data::new(config.kafka_brokers.clone());
 
     HttpServer::new(move || {
         App::new()
             .app_data(web::Data::new(pool.clone()))
             .app_data(config_data.clone())
+            .app_data(chat_rooms.clone())
+            .app_data(kafka_producer.clone())
+            .app_data(kafka_admin.clone())
+            .app_data(kafka_brokers.clone())
             .wrap(Cors::permissive())
             .configure(routes::init)
     })

@@ -1,20 +1,51 @@
-use actix_web::{web, HttpResponse, Responder};
+use actix_web::{web, HttpRequest, HttpResponse, Responder};
+use rdkafka::admin::AdminClient;
+use rdkafka::client::DefaultClientContext;
 use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::config::Config;
 use crate::error::AppError;
 use crate::extractors::ValidatedJson;
-use crate::models::{CreateStreamRequest, StreamMetadata, StreamResponse, StopStreamRequest, StopStreamResponse, ViewerJoinResponse};
+use crate::handlers::auth::extract_claims_from_request;
+use crate::kafka;
+use crate::models::{CreateStreamRequest, StreamListItem, StreamMetadata, StreamResponse, StopStreamRequest, StopStreamResponse, ViewerJoinResponse};
 use crate::repository::StreamRepository;
 use crate::response::ApiResponse;
 
+pub async fn list(
+    pool: web::Data<PgPool>,
+) -> Result<impl Responder, AppError> {
+    let streams = StreamRepository::get_all(&pool).await?;
+    let items: Vec<StreamListItem> = streams
+        .into_iter()
+        .map(|s| StreamListItem {
+            id: s.id.to_string(),
+            host_name: s.host_name,
+            host_id: s.host_id.map(|id| id.to_string()),
+            title: s.title,
+            status: s.status,
+            created_at: s.created_at,
+        })
+        .collect();
+    Ok(HttpResponse::Ok().json(ApiResponse::success(items)))
+}
+
 pub async fn start(
+    req: HttpRequest,
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
-    ValidatedJson(req): ValidatedJson<CreateStreamRequest>,
+    admin: web::Data<AdminClient<DefaultClientContext>>,
+    ValidatedJson(body): ValidatedJson<CreateStreamRequest>,
 ) -> Result<impl Responder, AppError> {
-    let stream = StreamRepository::create(&pool, req.host_id, req.title).await?;
+    // Require authentication
+    let claims = extract_claims_from_request(&req, &config.jwt_secret)?;
+    let host_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Unauthorized("Invalid user ID in token".to_string()))?;
+
+    let stream = StreamRepository::create(&pool, host_id, claims.display_name, body.title).await?;
+
+    kafka::create_topic(&admin, &stream.id.to_string()).await;
 
     let response = StreamResponse {
         stream_id: stream.id.to_string(),
@@ -25,15 +56,28 @@ pub async fn start(
 }
 
 pub async fn stop(
+    req: HttpRequest,
     pool: web::Data<PgPool>,
-    ValidatedJson(req): ValidatedJson<StopStreamRequest>,
+    config: web::Data<Config>,
+    admin: web::Data<AdminClient<DefaultClientContext>>,
+    ValidatedJson(body): ValidatedJson<StopStreamRequest>,
 ) -> Result<impl Responder, AppError> {
-    let id = Uuid::parse_str(&req.stream_id)
+    // Require authentication
+    let claims = extract_claims_from_request(&req, &config.jwt_secret)?;
+    let user_id = Uuid::parse_str(&claims.sub)
+        .map_err(|_| AppError::Unauthorized("Invalid user ID in token".to_string()))?;
+
+    let id = Uuid::parse_str(&body.stream_id)
         .map_err(|_| AppError::BadRequest("Invalid stream_id format".to_string()))?;
 
     let stream = StreamRepository::get_by_id(&pool, id)
         .await?
         .ok_or_else(|| AppError::NotFound("Stream not found".to_string()))?;
+
+    // Ensure only the stream's host can stop it
+    if stream.host_id != Some(user_id) {
+        return Err(AppError::Unauthorized("You are not the host of this stream".to_string()));
+    }
 
     if stream.status != "live" {
         return Err(AppError::BadRequest(format!(
@@ -43,6 +87,7 @@ pub async fn stop(
     }
 
     StreamRepository::update_status(&pool, id, "stopped").await?;
+    kafka::delete_topic(&admin, &id.to_string()).await;
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(StopStreamResponse {
         status: "stopped".to_string(),
@@ -59,12 +104,14 @@ pub async fn metadata(
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(StreamMetadata {
         title: stream.title,
-        host_id: stream.host_id,
+        host_name: stream.host_name,
+        host_id: stream.host_id.map(|id| id.to_string()),
         status: stream.status,
     })))
 }
 
 pub async fn join(
+    req: HttpRequest,
     pool: web::Data<PgPool>,
     config: web::Data<Config>,
     path: web::Path<Uuid>,
@@ -73,12 +120,25 @@ pub async fn join(
         .await?
         .ok_or_else(|| AppError::NotFound("Stream not found".to_string()))?;
 
-    if stream.status != "live" {
-        return Err(AppError::BadRequest("Stream is not live".to_string()));
-    }
+    // Derive media host from the incoming request's Host header so remote
+    // clients (mobile, other PCs) get URLs pointing to this server, not localhost.
+    let media_host = req
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .map(|h| h.split(':').next().unwrap_or("localhost").to_string())
+        .unwrap_or_else(|| "localhost".to_string());
 
     Ok(HttpResponse::Ok().json(ApiResponse::success(ViewerJoinResponse {
-        stream_url: format!("{}/live/{}", config.media_server_url, stream.id),
+        hls_url: format!("http://{}:8888/live/{}/index.m3u8", media_host, stream.id),
+        hls_720p_url: format!("http://{}:8888/live/{}_720p/index.m3u8", media_host, stream.id),
+        hls_480p_url: format!("http://{}:8888/live/{}_480p/index.m3u8", media_host, stream.id),
+        hls_360p_url: format!("http://{}:8888/live/{}_360p/index.m3u8", media_host, stream.id),
+        hls_240p_url: format!("http://{}:8888/live/{}_240p/index.m3u8", media_host, stream.id),
+        hls_144p_url: format!("http://{}:8888/live/{}_144p/index.m3u8", media_host, stream.id),
+        webrtc_url: format!("http://{}:8889/live/{}", media_host, stream.id),
         chat_room_id: stream.id.to_string(),
+        username: stream.host_name.clone(),
+        title: stream.title.clone(),
     })))
 }

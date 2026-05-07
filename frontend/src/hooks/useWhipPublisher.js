@@ -1,0 +1,87 @@
+import { useRef, useCallback } from 'react';
+import { WHIP_URL } from '../config';
+
+/**
+ * Publishes a MediaStream to MediaMTX via the WHIP protocol.
+ * WHIP = WebRTC-HTTP Ingestion Protocol (RFC draft)
+ * MediaMTX exposes it at: POST /{streamId}/whip
+ */
+export function useWhipPublisher() {
+  const pcRef = useRef(null);
+
+  const publish = useCallback(async (streamId, mediaStream) => {
+    // Clean up any existing connection
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
+    });
+    pcRef.current = pc;
+
+    // Add all tracks from the media stream
+    mediaStream.getTracks().forEach(track => pc.addTrack(track, mediaStream));
+
+    // Prefer H.264 for video so MediaMTX can mux it into HLS directly
+    // Wrapped in try/catch — mobile browsers (Safari/Firefox) may not support setCodecPreferences
+    pc.getTransceivers().forEach(transceiver => {
+      if (transceiver.sender.track?.kind === 'video') {
+        try {
+          const codecs = RTCRtpSender.getCapabilities('video')?.codecs || [];
+          const h264 = codecs.filter(c => c.mimeType === 'video/H264');
+          if (h264.length > 0) transceiver.setCodecPreferences(h264);
+        } catch (_) {
+          // setCodecPreferences not supported — browser will negotiate codec automatically
+        }
+      }
+    });
+
+    // Create offer
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+
+    // Wait for ICE gathering to complete
+    await new Promise(resolve => {
+      if (pc.iceGatheringState === 'complete') return resolve();
+      pc.addEventListener('icegatheringstatechange', () => {
+        if (pc.iceGatheringState === 'complete') resolve();
+      });
+      // Fallback timeout — send with trickle ICE candidates after 2s
+      setTimeout(resolve, 2000);
+    });
+
+    // Bail out if the connection was closed during ICE gathering (StrictMode / unmount)
+    if (pc.signalingState === 'closed') return;
+
+    // Send offer to MediaMTX WHIP endpoint
+    const res = await fetch(WHIP_URL(streamId), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/sdp' },
+      body: pc.localDescription.sdp,
+    });
+
+    if (!res.ok) {
+      throw new Error(`WHIP offer rejected: ${res.status} ${res.statusText}`);
+    }
+
+    const answerSdp = await res.text();
+
+    // Bail out again in case of unmount between fetch and setRemoteDescription
+    if (pc.signalingState === 'closed') return;
+
+    await pc.setRemoteDescription({ type: 'answer', sdp: answerSdp });
+
+    return pc;
+  }, []);
+
+  const stop = useCallback(() => {
+    if (pcRef.current) {
+      pcRef.current.close();
+      pcRef.current = null;
+    }
+  }, []);
+
+  return { publish, stop, pcRef };
+}

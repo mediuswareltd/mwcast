@@ -1,0 +1,29 @@
+:80 {
+    # API
+    handle /api/* {
+        reverse_proxy backend:8080 {
+            header_up Host {host}
+            header_up X-Real-IP {remote_host}
+        }
+    }
+
+    # MediaMTX HLS
+    handle_path /hls/* {
+        reverse_proxy media-server:8888
+    }
+
+    # MediaMTX WebRTC
+    handle_path /webrtc/* {
+        reverse_proxy media-server:8889
+    }
+
+    # MediaMTX API
+    handle_path /mediamtx/* {
+        reverse_proxy media-server:9997
+    }
+
+    # Frontend (Catch-all)
+    handle {
+        reverse_proxy frontend:5173
+    }
+}
