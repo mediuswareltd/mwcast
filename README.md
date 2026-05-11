@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="arts/logo-v2.png" alt="Shannon logo" width="200px" height="200px" />
+</p>
+
 # MW Cast
 
 **MW Cast** is a high-performance live media streaming platform. Hosts can start streams, share unique URLs, and interact with viewers via real-time chat. It supports low-latency video delivery using RTMP ingestion, multi-resolution HLS/WebRTC playback, and scalable WebSocket chat backed by Kafka.
