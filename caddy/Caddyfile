@@ -1,12 +1,16 @@
-mwcast.mediusware.xyz {
-    # Automatic HTTPS via Let's Encrypt (Caddy handles cert issuance & renewal)
+{
+    # SSL is handled by host Nginx — Caddy is internal HTTP router only
+    auto_https off
+    http_port 8090
+}
 
+:8090 {
     # Backend API
     handle /api/* {
         reverse_proxy backend:8080 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
-            header_up X-Forwarded-Proto {scheme}
+            header_up X-Forwarded-Proto https
         }
     }
 

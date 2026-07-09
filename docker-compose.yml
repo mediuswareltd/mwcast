@@ -118,15 +118,13 @@ services:
     volumes:
       - ./frontend:/app
 
-  # Gateway (Caddy)
+  # Gateway (Caddy — internal only, host Nginx terminates SSL)
   gateway:
     image: caddy:latest
     container_name: mwcast-gateway
     restart: always
     ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"  # HTTP/3 (QUIC) support
+      - "127.0.0.1:8090:8090"   # Only accessible from host, not the public internet
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile
       - caddy_data:/data
