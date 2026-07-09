@@ -13,7 +13,7 @@ hlsAllowOrigin: '*'
 webrtc: true
 webrtcAddress: :8889
 webrtcICEUDPMuxAddress: :8889
-webrtcICEHostNAT1To1IPs: [10.0.0.17]
+webrtcICEHostNAT1To1IPs: ["${SERVER_PUBLIC_IP:-}"]
 webrtcAllowOrigin: '*'
 
 api: true

@@ -1,29 +1,33 @@
-:80 {
-    # API
+mwcast.mediusware.xyz {
+    # Automatic HTTPS via Let's Encrypt (Caddy handles cert issuance & renewal)
+
+    # Backend API
     handle /api/* {
         reverse_proxy backend:8080 {
             header_up Host {host}
             header_up X-Real-IP {remote_host}
+            header_up X-Forwarded-Proto {scheme}
         }
     }
 
-    # MediaMTX HLS
+    # MediaMTX HLS streams
     handle_path /hls/* {
         reverse_proxy media-server:8888
     }
 
-    # MediaMTX WebRTC
+    # MediaMTX WebRTC signalling
     handle_path /webrtc/* {
         reverse_proxy media-server:8889
     }
 
-    # MediaMTX API
+    # MediaMTX management API
     handle_path /mediamtx/* {
         reverse_proxy media-server:9997
     }
 
-    # Frontend (Catch-all)
+    # Frontend SPA (catch-all)
     handle {
         reverse_proxy frontend:5173
     }
 }
+
