@@ -7,7 +7,7 @@ export default defineConfig({
   server: {
     host: true,
     port: 5173,
-    allowedHosts: 'all',
+    allowedHosts: true,   // boolean true = allow ALL hosts (string 'all' does NOT work)
     hmr: {
       clientPort: 443,
     },
