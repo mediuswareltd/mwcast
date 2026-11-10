@@ -329,3 +329,15 @@ Logs are written to `backend/logs/mwcast.log.<date>` with daily rotation, and al
 ## Demonstration
 
 https://drive.google.com/file/d/13hWg86fdDvJqCmBK2X7VM3o-X04reut6/view?usp=sharing
+
+## Documentation
+
+Full docs site (VitePress): **https://mediuswareltd.github.io/mwcast/**
+
+Local preview:
+
+```bash
+cd docs
+npm install
+npm run docs:dev
+```
