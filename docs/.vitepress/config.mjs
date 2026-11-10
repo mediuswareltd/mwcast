@@ -10,7 +10,7 @@ export default defineConfig({
     ['link', { rel: 'icon', href: '/favicon.svg' }],
   ],
   themeConfig: {
-    logo: { light: '/logo.svg', dark: '/logo.svg' },
+    logo: { light: '/logo.png', dark: '/logo.png' },
     siteTitle: "MW Cast",
     nav: [
       { text: 'Home', link: '/' },
@@ -45,6 +45,14 @@ export default defineConfig({
     },
     search: {
       provider: 'local'
+    }
+  }
+,
+  vite: {
+    css: {
+      postcss: {
+        plugins: []
+      }
     }
   }
 })

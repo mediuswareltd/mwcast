@@ -5,6 +5,9 @@ hero:
   name: "MW Cast"
   text: "Live media streaming with chat"
   tagline: "A high-performance live streaming platform with React frontend, Rust API, Kafka chat, and MediaMTX ingestion."
+  image:
+    src: /hero.png
+    alt: "MW Cast live streaming interface"
   actions:
   - theme: brand
     text: Get started
