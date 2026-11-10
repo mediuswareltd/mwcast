@@ -7,10 +7,10 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   head: [
-    ['link', { rel: 'icon', href: '/favicon.svg' }],
+    ['link', { rel: 'icon', href: '/favicon.png' }],
   ],
   themeConfig: {
-    logo: { light: '/logo.png', dark: '/logo.png' },
+    logo: { light: '/logo.png', dark: '/logo.png', alt: "MW Cast" },
     siteTitle: "MW Cast",
     nav: [
       { text: 'Home', link: '/' },
@@ -45,7 +45,8 @@ export default defineConfig({
     },
     search: {
       provider: 'local'
-    }
+    },
+    outline: [2, 3]
   }
 ,
   vite: {
